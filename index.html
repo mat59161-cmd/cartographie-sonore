@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cartographie Sonore — Port de Québec</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0d11;
+    --panel: #101318;
+    --border: #1e222c;
+    --accent: #e2784a;
+    --accent-dim: rgba(226,120,74,.15);
+    --accent-glow: rgba(226,120,74,.25);
+    --text: #dfe2ea;
+    --muted: #5c6370;
+    --success: #4ade80;
+    --panel-w: 320px;
+    --radius: 6px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'DM Mono', monospace;
+    background: var(--bg); color: var(--text);
+    display: flex; height: 100vh; overflow: hidden;
+  }
+  #panel {
+    width: var(--panel-w); min-width: var(--panel-w);
+    background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow-y: auto; z-index: 1000;
+    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  }
+  #panel::-webkit-scrollbar { width: 4px; }
+  #panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .panel-header {
+    padding: 22px 20px 18px; border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(226,120,74,.04) 0%, transparent 100%);
+  }
+  .eyebrow { font-size: 9px; letter-spacing: .22em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; font-weight: 500; }
+  h1 { font-family: 'Instrument Sans', sans-serif; font-weight: 700; font-size: 20px; line-height: 1.15; }
+  h1 span { color: var(--accent); }
+  .subtitle { font-size: 10px; color: var(--muted); margin-top: 6px; }
+  .section { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .section-title { font-size: 9px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+  .pills { display: flex; gap: 5px; flex-wrap: wrap; }
+  .pill {
+    padding: 5px 11px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: transparent;
+    color: var(--muted); font-family: 'DM Mono', monospace;
+    font-size: 11px; cursor: pointer; transition: all .15s;
+  }
+  .pill:hover { border-color: var(--accent); color: var(--text); background: var(--accent-dim); }
+  .pill.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; box-shadow: 0 2px 12px var(--accent-glow); }
+  .slider-row { margin-bottom: 14px; }
+  .slider-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; font-size: 11px; }
+  .slider-label .val { font-size: 12px; color: var(--accent); font-weight: 500; min-width: 48px; text-align: right; }
+  .slider-label .val.active-param { background: var(--accent-dim); padding: 1px 6px; border-radius: 3px; }
+  input[type=range] { -webkit-appearance: none; width: 100%; height: 4px; background: var(--border); border-radius: 2px; outline: none; }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--accent); cursor: pointer; border: 2px solid var(--bg);
+    box-shadow: 0 0 8px var(--accent-glow); transition: transform .15s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.25); }
+  input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid var(--bg); }
+  .slider-ticks { display: flex; justify-content: space-between; padding: 4px 2px 0; font-size: 8px; color: var(--muted); }
+  .slider-ticks span { cursor: pointer; transition: color .15s; padding: 2px 1px; }
+  .slider-ticks span:hover { color: var(--accent); }
+  .slider-ticks span.tick-active { color: var(--accent); font-weight: 500; }
+  .slider-ticks span.unavailable { opacity: .25; text-decoration: line-through; }
+  .toggle-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 11px; }
+  .toggle { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider { position: absolute; inset: 0; background: var(--border); border-radius: 20px; cursor: pointer; transition: .2s; }
+  .toggle-slider:before { content:''; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: var(--muted); border-radius: 50%; transition: .2s; }
+  .toggle input:checked + .toggle-slider { background: var(--accent); }
+  .toggle input:checked + .toggle-slider:before { transform: translateX(16px); background: #fff; }
+  .layer-item { display: flex; align-items: center; padding: 7px 10px; margin-bottom: 4px; border-radius: var(--radius); border: 1px solid var(--border); font-size: 10px; gap: 7px; transition: border-color .15s; }
+  .layer-item:hover { border-color: rgba(226,120,74,.3); }
+  .layer-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .layer-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .layer-type { font-size: 9px; color: var(--muted); flex-shrink: 0; }
+  .layer-item button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 2px; flex-shrink: 0; }
+  .layer-item button:hover { color: var(--accent); }
+  .legend-grid { display: flex; flex-direction: column; gap: 3px; }
+  .legend-row { display: flex; align-items: center; gap: 8px; font-size: 10px; transition: opacity .2s; }
+  .legend-row.hidden-lvl { opacity: .3; }
+  .legend-swatch { width: 20px; height: 11px; border-radius: 2px; flex-shrink: 0; border: 1px solid rgba(255,255,255,.06); }
+  .env-note { font-size: 10px; color: var(--muted); margin-top: 8px; line-height: 1.6; padding: 6px 8px; background: rgba(255,255,255,.02); border-radius: var(--radius); border: 1px solid var(--border); min-height: 32px; }
+  #status { padding: 10px 20px; font-size: 10px; color: var(--muted); border-top: 1px solid var(--border); margin-top: auto; display: flex; align-items: center; }
+  .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--success); margin-right: 8px; animation: pulse 2s infinite; flex-shrink: 0; }
+  .dot.loading { background: var(--accent); animation: pulse .6s infinite; }
+  .dot.error { background: #ef4444; animation: none; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .anim-controls { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .anim-btn {
+    background: var(--accent-dim); border: 1px solid var(--accent); color: var(--accent);
+    font-family: 'DM Mono', monospace; font-size: 10px; padding: 5px 12px;
+    border-radius: var(--radius); cursor: pointer; transition: all .15s; display: flex; align-items: center; gap: 5px;
+  }
+  .anim-btn:hover, .anim-btn.playing { background: var(--accent); color: #fff; }
+  .anim-progress { flex: 1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .anim-progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .3s; width: 0; }
+  .anim-speed select { background: var(--bg); border: 1px solid var(--border); color: var(--text); font-family: 'DM Mono', monospace; font-size: 9px; padding: 2px 4px; border-radius: 3px; }
+  .config-badge {
+    position: absolute; top: 12px; right: 12px;
+    background: rgba(16,19,24,.92); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 8px 14px; z-index: 999;
+    font-size: 11px; font-family: 'DM Mono', monospace;
+    display: none; align-items: center; gap: 10px; backdrop-filter: blur(8px); color: var(--text);
+  }
+  .config-badge .param { color: var(--accent); font-weight: 500; }
+  .config-badge .sep { width: 1px; height: 14px; background: var(--border); }
+  #map { flex: 1; position: relative; }
+  #drag-overlay {
+    display: none; position: absolute; inset: 0;
+    background: rgba(11,13,17,.90); z-index: 2000;
+    align-items: center; justify-content: center; flex-direction: column; gap: 14px;
+    pointer-events: none; backdrop-filter: blur(4px);
+  }
+  #drag-overlay.active { display: flex; }
+  #drag-overlay .drop-icon { font-size: 48px; }
+  #drag-overlay .drop-text { font-family: 'Instrument Sans', sans-serif; font-size: 20px; font-weight: 700; color: var(--accent); }
+  #drag-overlay .drop-sub { font-size: 11px; color: var(--muted); }
+  #db-bar {
+    position: absolute; bottom: 28px; right: 12px;
+    background: rgba(16,19,24,.94); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 14px; z-index: 999;
+    font-size: 9px; color: var(--muted); backdrop-filter: blur(8px);
+  }
+  .bar-title { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 8px; color: var(--text); }
+  .bar-item { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+  .bar-swatch { width: 14px; height: 14px; border-radius: 2px; }
+  #loading {
+    display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    z-index: 1500; background: rgba(16,19,24,.92); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 24px; font-size: 11px; color: var(--text);
+    backdrop-filter: blur(8px); align-items: center; gap: 10px;
+  }
+  #loading.visible { display: flex; }
+  .spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .load-btn {
+    width: 100%; padding: 8px; background: var(--accent-dim);
+    border: 1px dashed var(--accent); border-radius: var(--radius);
+    color: var(--accent); font-family: 'DM Mono', monospace; font-size: 10px;
+    cursor: pointer; text-align: center; transition: all .15s; margin-top: 8px;
+  }
+  .load-btn:hover { background: var(--accent); color: #fff; border-style: solid; }
+  #file-input { display: none; }
+  .preload-info { font-size: 9px; color: var(--muted); margin-top: 8px; padding: 5px 8px; background: rgba(255,255,255,.02); border-radius: var(--radius); border: 1px solid var(--border); line-height: 1.5; }
+  .preload-info .count { color: var(--accent); font-weight: 500; }
+  .leaflet-popup-content-wrapper { background: var(--panel) !important; border: 1px solid var(--border) !important; border-radius: var(--radius) !important; box-shadow: 0 8px 32px rgba(0,0,0,.5) !important; color: var(--text) !important; font-family: 'DM Mono', monospace !important; font-size: 11px !important; }
+  .leaflet-popup-tip { background: var(--panel) !important; }
+  .leaflet-popup-close-button { color: var(--muted) !important; }
+  .popup-level { font-size: 18px; font-weight: 700; font-family: 'Instrument Sans', sans-serif; margin-bottom: 2px; }
+  .popup-label { font-size: 10px; color: var(--muted); margin-bottom: 8px; }
+  .popup-row { display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; }
+  .popup-key { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <div class="panel-header">
+    <div class="eyebrow">Maîtrise · Cartographie sonore</div>
+    <h1>Port de <span>Québec</span></h1>
+    <div class="subtitle">NoiseModelling · Isosurfaces interactives</div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span>🌡️</span> Paramètres environnementaux</div>
+    <div class="slider-row">
+      <div class="slider-label"><span>Température</span><span class="val active-param" id="val-temp">—</span></div>
+      <input type="range" id="sl-temp" min="0" max="0" step="1" value="0">
+      <div class="slider-ticks" id="ticks-temp"></div>
+    </div>
+    <div class="slider-row">
+      <div class="slider-label"><span>Humidité relative</span><span class="val active-param" id="val-hum">—</span></div>
+      <input type="range" id="sl-hum" min="0" max="0" step="1" value="0">
+      <div class="slider-ticks" id="ticks-hum"></div>
+    </div>
+    <div class="slider-row">
+      <div class="slider-label"><span>Vent <span style="font-size:9px;color:var(--muted)">(info)</span></span><span class="val" id="val-wind">5 m/s</span></div>
+      <input type="range" id="sl-wind" min="0" max="20" value="5">
+    </div>
+    <div class="env-note" id="env-note"></div>
+    <div class="preload-info" id="preload-info"></div>
+    <div class="anim-controls">
+      <button class="anim-btn" id="btn-animate" onclick="toggleAnimation()"><span id="anim-icon">▶</span> Animer T°</button>
+      <div class="anim-progress"><div class="anim-progress-fill" id="anim-progress"></div></div>
+      <div class="anim-speed"><select id="anim-speed"><option value="2000">Lent</option><option value="1000" selected>Normal</option><option value="500">Rapide</option></select></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span>🕐</span> Période</div>
+    <div class="pills" id="period-pills">
+      <button class="pill active" data-period="ALL">Tout</button>
+      <button class="pill" data-period="D">Jour</button>
+      <button class="pill" data-period="E">Soir</button>
+      <button class="pill" data-period="N">Nuit</button>
+      <button class="pill" data-period="DEN">DEN</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span>👁️</span> Affichage</div>
+    <div class="toggle-row">
+      <span>Masquer &lt; 35 dB (fond zone d'étude)</span>
+      <label class="toggle"><input type="checkbox" id="tog-hide35" checked><span class="toggle-slider"></span></label>
+    </div>
+    <div class="slider-row">
+      <div class="slider-label"><span>Opacité isosurfaces</span><span class="val" id="val-opacity">70%</span></div>
+      <input type="range" id="sl-opacity" min="0" max="100" value="70">
+    </div>
+    <div class="toggle-row">
+      <span>Fond satellite</span>
+      <label class="toggle"><input type="checkbox" id="tog-satellite"><span class="toggle-slider"></span></label>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span>🗂️</span> Couches actives</div>
+    <div id="layers-list"><span style="font-size:10px;color:var(--muted);font-style:italic">Chargement...</span></div>
+    <button class="load-btn" onclick="document.getElementById('file-input').click()">+ Glisser ou charger des fichiers</button>
+    <input type="file" id="file-input" multiple accept=".geojson,.json">
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span>🎨</span> Légende — dB(A)</div>
+    <div class="legend-grid" id="legend"></div>
+  </div>
+
+  <div id="status"><span class="dot" id="status-dot"></span><span id="status-text">Initialisation...</span></div>
+</div>
+
+<div id="map">
+  <div id="drag-overlay">
+    <div class="drop-icon">🗺️</div>
+    <div class="drop-text">Dépose tes fichiers GeoJSON</div>
+    <div class="drop-sub">Isosurfaces · Bâtiments · Routes — détection automatique</div>
+  </div>
+  <div class="config-badge" id="config-badge">
+    <span>T = <span class="param" id="badge-temp">—</span></span>
+    <span class="sep"></span>
+    <span>H = <span class="param" id="badge-hum">—</span></span>
+    <span class="sep"></span>
+    <span id="badge-file" style="color:var(--muted);font-size:9px;"></span>
+  </div>
+  <div id="db-bar"><div class="bar-title">Niveaux sonores</div><div id="db-bar-items"></div></div>
+  <div id="loading"><div class="spinner"></div><span id="loading-text">Chargement...</span></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+// ═══════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════
+const DATA_PATH = './data/';
+
+// Couches statiques chargées au démarrage. Décommente et adapte :
+const STATIC_FILES = [
+  // { file: 'BUILDINGS.geojson', type: 'buildings' },
+  // { file: 'ROADS.geojson', type: 'routes' },
+];
+
+const PALETTE = [
+  { label:'< 35',  isolvl:0,  color:'#82a7ac' },
+  { label:'35–40', isolvl:1,  color:'#a0bbbf' },
+  { label:'40–45', isolvl:2,  color:'#b8d6d1' },
+  { label:'45–50', isolvl:3,  color:'#cfe4cc' },
+  { label:'50–55', isolvl:4,  color:'#e3f2bf' },
+  { label:'55–60', isolvl:5,  color:'#f4c683' },
+  { label:'60–65', isolvl:6,  color:'#e87d4d' },
+  { label:'65–70', isolvl:7,  color:'#cd463f' },
+  { label:'70–75', isolvl:8,  color:'#a11a4d' },
+  { label:'75–80', isolvl:9,  color:'#75095d' },
+  { label:'> 80',  isolvl:10, color:'#430a4a' },
+];
+const colorFor = lvl => (PALETTE.find(p=>p.isolvl===lvl)||{color:'#888'}).color;
+
+const TYPE_META = {
+  iso:{label:'Isosurfaces',dot:'#e87d4d'}, buildings:{label:'Bâtiments',dot:'#4a90d9'},
+  routes:{label:'Routes',dot:'#a0bbbf'}, unknown:{label:'GeoJSON',dot:'#888'},
+};
+
+// ═══════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════
+let TEMPERATURES = [], HUMIDITIES = [];
+let availableKeys = new Set();
+
+const state = {
+  tempIndex:0, humIndex:0, period:'ALL', opacity:0.70,
+  hide35:true, isoLayer:null, isoGeojson:null,
+  isoCache:{}, staticLayers:[], animating:false, animTimer:null,
+};
+
+const getTemp=()=>TEMPERATURES[state.tempIndex]??0;
+const getHum=()=>HUMIDITIES[state.humIndex]??0;
+const getKey=()=>`T${getTemp()}_H${getHum()}`;
+const getFilename=()=>`iso_${getKey()}.geojson`;
+const getMinLvl=()=>state.hide35 ? 1 : 0;
+
+// ═══════════════════════════════════════
+//  MAP
+// ═══════════════════════════════════════
+const map = L.map('map',{center:[46.7915,-71.2313],zoom:15});
+const tileOSM = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'&copy; CartoDB',maxZoom:20}).addTo(map);
+const tileSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'&copy; Esri',maxZoom:20});
+
+// ═══════════════════════════════════════
+//  REPROJECTION
+// ═══════════════════════════════════════
+function merc2ll(x,y){return[x/20037508.342*180,(2*Math.atan(Math.exp(y/6378137))-Math.PI/2)*180/Math.PI];}
+function cvtC(c){if(typeof c[0]==='number')return merc2ll(c[0],c[1]);return c.map(cvtC);}
+function reproject(gj){
+  const crs=gj.crs?.properties?.name||'';
+  let need=crs.includes('3857')||crs.includes('900913');
+  if(!need&&gj.features?.length){
+    let tc=gj.features[0]?.geometry?.coordinates;
+    if(tc){while(Array.isArray(tc[0]))tc=tc[0];if(typeof tc[0]==='number'&&Math.abs(tc[0])>180)need=true;}
+  }
+  if(!need)return gj;
+  const out=JSON.parse(JSON.stringify(gj));out._reproj=true;
+  out.features.forEach(f=>{if(f.geometry?.coordinates)f.geometry.coordinates=cvtC(f.geometry.coordinates);});
+  delete out.crs; return out;
+}
+
+// ═══════════════════════════════════════
+//  TYPE DETECTION
+// ═══════════════════════════════════════
+function detectType(gj,fn){
+  if(fn){const f=fn.toLowerCase();if(f.includes('iso')||f.includes('noise')||f.includes('lvl'))return'iso';if(f.includes('build')||f.includes('batiment'))return'buildings';if(f.includes('route')||f.includes('road'))return'routes';}
+  if(!gj.features?.length)return'unknown';const p=gj.features[0].properties||{},g=gj.features[0].geometry?.type;
+  if('ISOLVL'in p)return'iso';if('HEIGHT_WALL'in p||'ID_BUILD'in p)return'buildings';
+  if(g==='LineString'||g==='MultiLineString')return'routes';return'unknown';
+}
+
+// ═══════════════════════════════════════
+//  LAYER FACTORIES
+// ═══════════════════════════════════════
+function makeIsoLayer(gj){
+  const min=getMinLvl();
+  return L.geoJSON(gj,{
+    filter:f=>{const p=f.properties;return(state.period==='ALL'||p.PERIOD===state.period)&&(p.ISOLVL||0)>=min;},
+    style:f=>{const c=colorFor(f.properties.ISOLVL);return{fillColor:c,color:c,weight:.4,fillOpacity:state.opacity,opacity:.7};},
+    onEachFeature:(f,layer)=>{const p=f.properties,c=colorFor(p.ISOLVL);
+      layer.bindPopup(`<div class="popup-level" style="color:${c}">${p.ISOLABEL||p.ISOLVL} dB(A)</div><div class="popup-label">Niveau sonore</div><div class="popup-row"><span class="popup-key">Période</span><span>${p.PERIOD||'—'}</span></div><div class="popup-row"><span class="popup-key">ISOLVL</span><span>${p.ISOLVL}</span></div>`);}
+  });
+}
+function makeBuildingLayer(gj){
+  return L.geoJSON(gj,{style:{fillColor:'#1a1f2b',color:'#2d3344',weight:1,fillOpacity:.88},
+    onEachFeature:(f,layer)=>{const p=f.properties;layer.bindPopup(`<div class="popup-level" style="color:#4a90d9;font-size:15px">Bâtiment</div><div class="popup-row"><span class="popup-key">Hauteur</span><span>${p.HEIGHT||p.HEIGHT_WALL||'—'} m</span></div><div class="popup-row"><span class="popup-key">Niveaux</span><span>${p.NB_LEV||'—'}</span></div>`);}});
+}
+function makeRouteLayer(gj){
+  return L.geoJSON(gj,{style:f=>{const p=f.properties||{},tv=p.LV_D||p.TV_D||0,i=Math.min(tv/2000,1);return{color:tv?`rgb(${Math.round(168+i*67)},${Math.round(125-i*80)},${Math.round(77-i*40)})`:'#a0bbbf',weight:2.5,opacity:.8};},
+    onEachFeature:(f,layer)=>{const p=f.properties||{},rows=Object.entries(p).slice(0,8).map(([k,v])=>`<div class="popup-row"><span class="popup-key">${k}</span><span>${v??'—'}</span></div>`).join('');layer.bindPopup(`<div class="popup-level" style="color:#a0bbbf;font-size:15px">Route</div>${rows}`);}});
+}
+
+// ═══════════════════════════════════════
+//  MANIFEST / AUTO-DETECT
+// ═══════════════════════════════════════
+async function loadManifest(){
+  // Essayer manifest.json d'abord
+  try{
+    const r=await fetch(DATA_PATH+'manifest.json');
+    if(r.ok){const m=await r.json();if(m.temperatures)TEMPERATURES=m.temperatures;if(m.humidities)HUMIDITIES=m.humidities;
+    if(m.files)m.files.forEach(f=>{const mt=f.match(/T(-?\d+)_H(\d+)/);if(mt)availableKeys.add(`T${mt[1]}_H${mt[2]}`);});
+    setStatus(`✓ Manifest : ${availableKeys.size} cartes`,'ok');return;}
+  }catch(e){}
+
+  // Probe automatique
+  setStatus('Détection des fichiers...','loading');
+  const tTest=[-20,-15,-10,-5,0,5,10,15,20,25,30,35,40];
+  const hTest=[10,20,30,40,50,60,70,80,90,95,100];
+  const ts=new Set(),hs=new Set();
+  const probes=[];
+  for(const t of tTest)for(const h of hTest)
+    probes.push(fetch(DATA_PATH+`iso_T${t}_H${h}.geojson`,{method:'HEAD'}).then(r=>{if(r.ok){ts.add(t);hs.add(h);availableKeys.add(`T${t}_H${h}`);}}).catch(()=>{}));
+  await Promise.all(probes);
+  TEMPERATURES=[...ts].sort((a,b)=>a-b);
+  HUMIDITIES=[...hs].sort((a,b)=>a-b);
+  if(!TEMPERATURES.length) setStatus('⚠️ Aucun iso_T{X}_H{Y}.geojson dans data/ — glisse tes fichiers sur la carte','error');
+  else setStatus(`✓ ${availableKeys.size} cartes détectées (${TEMPERATURES.length}T × ${HUMIDITIES.length}H)`,'ok');
+}
+
+// ═══════════════════════════════════════
+//  SLIDER SETUP
+// ═══════════════════════════════════════
+function setupSliders(){
+  if(!TEMPERATURES.length||!HUMIDITIES.length)return;
+  state.tempIndex=TEMPERATURES.reduce((b,t,i)=>Math.abs(t-15)<Math.abs(TEMPERATURES[b]-15)?i:b,0);
+  state.humIndex=HUMIDITIES.reduce((b,h,i)=>Math.abs(h-60)<Math.abs(HUMIDITIES[b]-60)?i:b,0);
+  const sT=document.getElementById('sl-temp');sT.min=0;sT.max=TEMPERATURES.length-1;sT.value=state.tempIndex;
+  document.getElementById('val-temp').textContent=getTemp()+'°C';
+  const sH=document.getElementById('sl-hum');sH.min=0;sH.max=HUMIDITIES.length-1;sH.value=state.humIndex;
+  document.getElementById('val-hum').textContent=getHum()+'%';
+  initTicks();updateEnv();updatePreload();
+}
+function initTicks(){
+  const tt=document.getElementById('ticks-temp');
+  tt.innerHTML=TEMPERATURES.map((t,i)=>{const has=HUMIDITIES.some(h=>availableKeys.has(`T${t}_H${h}`));
+    return`<span data-i="${i}" class="${i===state.tempIndex?'tick-active':''} ${!has?'unavailable':''}">${t}°</span>`;}).join('');
+  tt.onclick=e=>{const i=e.target.dataset.i;if(i!==undefined){document.getElementById('sl-temp').value=i;onTemp(+i);}};
+  const th=document.getElementById('ticks-hum');
+  th.innerHTML=HUMIDITIES.map((h,i)=>{const has=TEMPERATURES.some(t=>availableKeys.has(`T${t}_H${h}`));
+    return`<span data-i="${i}" class="${i===state.humIndex?'tick-active':''} ${!has?'unavailable':''}">${h}%</span>`;}).join('');
+  th.onclick=e=>{const i=e.target.dataset.i;if(i!==undefined){document.getElementById('sl-hum').value=i;onHum(+i);}};
+}
+function updateTicks(){
+  document.querySelectorAll('#ticks-temp span').forEach((el,i)=>el.classList.toggle('tick-active',i===state.tempIndex));
+  document.querySelectorAll('#ticks-hum span').forEach((el,i)=>el.classList.toggle('tick-active',i===state.humIndex));
+}
+function updatePreload(){
+  const c=Object.keys(state.isoCache).length,t=availableKeys.size||(TEMPERATURES.length*HUMIDITIES.length);
+  document.getElementById('preload-info').innerHTML=t?`📦 <span class="count">${c}</span>/${t} cartes en cache`:'';
+}
+
+// ═══════════════════════════════════════
+//  SLIDER EVENTS
+// ═══════════════════════════════════════
+function onTemp(i){state.tempIndex=i;document.getElementById('val-temp').textContent=getTemp()+'°C';updateTicks();updateEnv();loadIso();}
+function onHum(i){state.humIndex=i;document.getElementById('val-hum').textContent=getHum()+'%';updateTicks();updateEnv();loadIso();}
+document.getElementById('sl-temp').addEventListener('input',function(){onTemp(+this.value);});
+document.getElementById('sl-hum').addEventListener('input',function(){onHum(+this.value);});
+document.getElementById('sl-wind').addEventListener('input',function(){document.getElementById('val-wind').textContent=this.value+' m/s';updateEnv();});
+function updateEnv(){
+  const T=getTemp(),H=getHum(),W=+document.getElementById('sl-wind').value;
+  let n=T<=0?'❄️ Froid : absorption HF élevée.':T>=25?'☀️ Chaud : propagation accrue.':'🌡️ Conditions tempérées.';
+  if(H<=40)n+=' Air sec : forte absorption HF.';else if(H>=80)n+=' Humidité élevée : absorption réduite.';
+  if(W>8)n+=' 💨 Vent fort : réfraction possible.';
+  document.getElementById('env-note').textContent=n;
+}
+
+// ═══════════════════════════════════════
+//  ISO LOADING
+// ═══════════════════════════════════════
+let loadAbort=null;
+async function loadIso(){
+  const key=getKey(),fn=getFilename();
+  document.getElementById('badge-temp').textContent=getTemp()+'°C';
+  document.getElementById('badge-hum').textContent=getHum()+'%';
+  document.getElementById('badge-file').textContent='iso_'+key;
+  document.getElementById('config-badge').style.display='flex';
+
+  if(state.isoCache[key]){applyIso(state.isoCache[key]);setStatus(`✓ ${fn} (cache)`,'ok');return;}
+  if(availableKeys.size&&!availableKeys.has(key)){setStatus(`⚠️ ${fn} non disponible`,'error');return;}
+  if(loadAbort)loadAbort.abort();loadAbort=new AbortController();
+  showLoading(`Chargement ${fn}...`);setStatus(`Chargement ${fn}...`,'loading');
+  try{
+    const r=await fetch(DATA_PATH+fn,{signal:loadAbort.signal});if(!r.ok)throw new Error(`HTTP ${r.status}`);
+    let gj=await r.json();gj=reproject(gj);state.isoCache[key]=gj;applyIso(gj);updatePreload();
+    setStatus(`✓ ${fn} · ${gj.features.length} entités`,'ok');
+  }catch(e){if(e.name==='AbortError')return;setStatus(`✗ ${fn} — ${e.message}`,'error');}
+  hideLoading();
+}
+function applyIso(gj){
+  if(state.isoLayer)map.removeLayer(state.isoLayer);
+  state.isoGeojson=gj;state.isoLayer=makeIsoLayer(gj);state.isoLayer.addTo(map);updateLayersList();
+}
+function refreshIso(){
+  if(!state.isoGeojson)return;
+  if(state.isoLayer)map.removeLayer(state.isoLayer);
+  state.isoLayer=makeIsoLayer(state.isoGeojson);state.isoLayer.addTo(map);updateLegend();
+}
+
+// ═══════════════════════════════════════
+//  DROPPED FILES
+// ═══════════════════════════════════════
+function addDroppedFile(name,gj){
+  gj=reproject(gj);const type=detectType(gj,name);
+  if(type==='iso'){
+    const m=name.match(/T(-?\d+)_H(\d+)/i);
+    if(m){
+      const key=`T${m[1]}_H${m[2]}`,t=+m[1],h=+m[2];
+      state.isoCache[key]=gj;availableKeys.add(key);
+      if(!TEMPERATURES.includes(t)){TEMPERATURES.push(t);TEMPERATURES.sort((a,b)=>a-b);}
+      if(!HUMIDITIES.includes(h)){HUMIDITIES.push(h);HUMIDITIES.sort((a,b)=>a-b);}
+      setupSliders();
+      if(key===getKey())applyIso(gj);
+      updatePreload();setStatus(`✓ ${name} → cache [${key}]`,'ok');
+    }else{applyIso(gj);setStatus(`✓ ${name} (isosurface)`,'ok');}
+    updateLayersList();return;
+  }
+  let ll;if(type==='buildings')ll=makeBuildingLayer(gj);else if(type==='routes')ll=makeRouteLayer(gj);else ll=L.geoJSON(gj);
+  ll.addTo(map);state.staticLayers.push({name,type,leafletLayer:ll});updateLayersList();
+  setStatus(`✓ "${name}" · ${TYPE_META[type].label}`,'ok');
+}
+function removeStaticLayer(i){map.removeLayer(state.staticLayers[i].leafletLayer);state.staticLayers.splice(i,1);updateLayersList();}
+
+// ═══════════════════════════════════════
+//  LAYERS LIST
+// ═══════════════════════════════════════
+function updateLayersList(){
+  const el=document.getElementById('layers-list'),items=[];
+  if(state.isoLayer)items.push(`<div class="layer-item"><div class="layer-dot" style="background:${TYPE_META.iso.dot}"></div><div class="layer-name">iso_${getKey()}</div><div class="layer-type">Isosurfaces</div></div>`);
+  state.staticLayers.forEach((l,i)=>items.push(`<div class="layer-item"><div class="layer-dot" style="background:${TYPE_META[l.type].dot}"></div><div class="layer-name" title="${l.name}">${l.name}</div><div class="layer-type">${TYPE_META[l.type].label}</div><button onclick="removeStaticLayer(${i})">✕</button></div>`));
+  el.innerHTML=items.length?items.join(''):'<span style="font-size:10px;color:var(--muted);font-style:italic">Aucune couche</span>';
+}
+
+// ═══════════════════════════════════════
+//  CONTROLS
+// ═══════════════════════════════════════
+document.getElementById('tog-hide35').addEventListener('change',function(){state.hide35=this.checked;refreshIso();});
+document.getElementById('period-pills').addEventListener('click',e=>{if(!e.target.classList.contains('pill'))return;document.querySelectorAll('#period-pills .pill').forEach(p=>p.classList.remove('active'));e.target.classList.add('active');state.period=e.target.dataset.period;refreshIso();});
+document.getElementById('sl-opacity').addEventListener('input',function(){state.opacity=this.value/100;document.getElementById('val-opacity').textContent=this.value+'%';refreshIso();});
+document.getElementById('tog-satellite').addEventListener('change',e=>{if(e.target.checked){map.removeLayer(tileOSM);tileSat.addTo(map);}else{map.removeLayer(tileSat);tileOSM.addTo(map);}});
+
+// ═══════════════════════════════════════
+//  ANIMATION
+// ═══════════════════════════════════════
+function toggleAnimation(){state.animating?stopAnim():startAnim();}
+function startAnim(){
+  if(!TEMPERATURES.length)return;state.animating=true;
+  document.getElementById('btn-animate').classList.add('playing');document.getElementById('anim-icon').textContent='⏸';
+  let idx=state.tempIndex;const speed=+document.getElementById('anim-speed').value;
+  (function step(){if(!state.animating)return;document.getElementById('sl-temp').value=idx;onTemp(idx);
+    document.getElementById('anim-progress').style.width=((idx+1)/TEMPERATURES.length*100)+'%';
+    idx=(idx+1)%TEMPERATURES.length;state.animTimer=setTimeout(step,speed);})();
+}
+function stopAnim(){state.animating=false;clearTimeout(state.animTimer);document.getElementById('btn-animate').classList.remove('playing');document.getElementById('anim-icon').textContent='▶';}
+
+// ═══════════════════════════════════════
+//  DRAG & DROP
+// ═══════════════════════════════════════
+const mapEl=document.getElementById('map'),ov=document.getElementById('drag-overlay');let dc=0;
+mapEl.addEventListener('dragenter',e=>{e.preventDefault();dc++;ov.classList.add('active');});
+mapEl.addEventListener('dragleave',()=>{dc--;if(dc<=0){dc=0;ov.classList.remove('active');}});
+mapEl.addEventListener('dragover',e=>e.preventDefault());
+mapEl.addEventListener('drop',e=>{e.preventDefault();dc=0;ov.classList.remove('active');
+  const files=Array.from(e.dataTransfer.files).filter(f=>/\.(geojson|json)$/i.test(f.name));
+  if(!files.length){setStatus('⚠️ Utilise des .geojson','error');return;}
+  setStatus(`Chargement de ${files.length} fichier(s)...`,'loading');
+  let n=0;files.forEach(file=>{const r=new FileReader();r.onload=ev=>{try{addDroppedFile(file.name,JSON.parse(ev.target.result));}catch{setStatus('⚠️ Erreur : '+file.name,'error');}n++;if(n===files.length)setStatus(`✓ ${n} fichier(s) chargé(s)`,'ok');};r.readAsText(file);});
+});
+document.getElementById('file-input').addEventListener('change',e=>{
+  Array.from(e.target.files).forEach(file=>{const r=new FileReader();r.onload=ev=>{try{addDroppedFile(file.name,JSON.parse(ev.target.result));}catch{setStatus('⚠️ Erreur : '+file.name,'error');}};r.readAsText(file);});e.target.value='';
+});
+
+// ═══════════════════════════════════════
+//  STATUS
+// ═══════════════════════════════════════
+function setStatus(msg,type='ok'){document.getElementById('status-text').textContent=msg;const d=document.getElementById('status-dot');d.className='dot';if(type==='loading')d.classList.add('loading');else if(type==='error')d.classList.add('error');}
+function showLoading(msg){document.getElementById('loading-text').textContent=msg;document.getElementById('loading').classList.add('visible');}
+function hideLoading(){document.getElementById('loading').classList.remove('visible');}
+
+// ═══════════════════════════════════════
+//  LEGEND
+// ═══════════════════════════════════════
+function updateLegend(){
+  const min=getMinLvl();
+  document.querySelectorAll('.legend-row').forEach(r=>r.classList.toggle('hidden-lvl',+r.dataset.lvl<min));
+}
+document.getElementById('legend').innerHTML=PALETTE.map(p=>`<div class="legend-row${p.isolvl<1?' hidden-lvl':''}" data-lvl="${p.isolvl}"><div class="legend-swatch" style="background:${p.color}"></div><span>${p.label} dB(A)</span></div>`).join('');
+document.getElementById('db-bar-items').innerHTML=[...PALETTE].reverse().map(p=>`<div class="bar-item"><div class="bar-swatch" style="background:${p.color}"></div><span>${p.label}</span></div>`).join('');
+
+// ═══════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════
+async function init(){
+  for(const sf of STATIC_FILES){try{const r=await fetch(DATA_PATH+sf.file);if(!r.ok)continue;let gj=await r.json();gj=reproject(gj);
+    let ll;if(sf.type==='buildings')ll=makeBuildingLayer(gj);else if(sf.type==='routes')ll=makeRouteLayer(gj);else ll=L.geoJSON(gj);
+    ll.addTo(map);state.staticLayers.push({name:sf.file,type:sf.type,leafletLayer:ll});}catch(e){}}
+  await loadManifest();setupSliders();updateLayersList();
+  if(TEMPERATURES.length&&HUMIDITIES.length)loadIso();
+}
+init();
+</script>
+</body>
+</html>
