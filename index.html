@@ -145,17 +145,20 @@
   <div class="section">
     <div class="section-title"><span>🕐</span> Période</div>
     <div class="pills" id="period-pills">
-      <button class="pill active" data-period="ALL">Tout</button>
       <button class="pill" data-period="D">Jour</button>
       <button class="pill" data-period="E">Soir</button>
       <button class="pill" data-period="N">Nuit</button>
-      <button class="pill" data-period="DEN">DEN</button>
+      <button class="pill active" data-period="DEN">DEN</button>
     </div>
   </div>
 
   <div class="section">
     <div class="section-title"><span>👁️</span> Affichage</div>
-    <div class="toggle-row"><span>Masquer &lt; 35 dB</span><label class="toggle"><input type="checkbox" id="tog-hide35" checked><span class="toggle-slider"></span></label></div>
+    <div class="slider-row">
+      <div class="slider-label"><span>Seuil minimum</span><span class="val" id="val-minlvl">≥ 35 dB</span></div>
+      <input type="range" id="sl-minlvl" min="0" max="8" step="1" value="1">
+      <div class="slider-ticks" id="ticks-minlvl"></div>
+    </div>
     <div class="slider-row">
       <div class="slider-label"><span>Opacité isosurfaces</span><span class="val" id="val-opacity">70%</span></div>
       <input type="range" id="sl-opacity" min="0" max="100" value="70">
@@ -236,8 +239,8 @@ let TEMPERATURES=[],HUMIDITIES=[];
 let availableKeys={base:new Set(),traffic:new Set()};
 
 const state={
-  scenario:'base',tempIndex:0,humIndex:0,period:'ALL',opacity:0.70,
-  hide35:true,isoLayer:null,isoGeojson:null,
+  scenario:'base',tempIndex:0,humIndex:0,period:'DEN',opacity:0.70,
+  hide35:true,minLevel:1,isoLayer:null,isoGeojson:null,
   isoCache:{base:{},traffic:{}},
   staticLayers:[],routeLayer:null,routeData:null,buildingLayer:null,buildingData:null,
   animating:false,animTimer:null,
@@ -248,7 +251,7 @@ const getHum=()=>HUMIDITIES[state.humIndex]??0;
 const getKey=()=>`T${getTemp()}_H${getHum()}`;
 const getFolder=()=>SCENARIOS[state.scenario].folder;
 const getFilename=()=>`iso_${getKey()}.geojson`;
-const getMinLvl=()=>state.hide35?1:0;
+const getMinLvl=()=>state.minLevel;
 
 // ═══════════════════════════════════════
 //  MAP
@@ -538,7 +541,14 @@ function updateLayersList(){
 // ═══════════════════════════════════════
 //  CONTROLS
 // ═══════════════════════════════════════
-document.getElementById('tog-hide35').addEventListener('change',function(){state.hide35=this.checked;refreshIso();});
+const LEVEL_LABELS=['< 35','35','40','45','50','55','60','65','70'];
+document.getElementById('sl-minlvl').addEventListener('input',function(){
+  state.minLevel=+this.value;
+  document.getElementById('val-minlvl').textContent='≥ '+LEVEL_LABELS[state.minLevel]+' dB';
+  refreshIso();updateLegend();
+});
+// Init ticks for min level
+document.getElementById('ticks-minlvl').innerHTML=LEVEL_LABELS.map((l,i)=>`<span>${l}</span>`).join('');
 document.getElementById('period-pills').addEventListener('click',e=>{if(!e.target.classList.contains('pill'))return;document.querySelectorAll('#period-pills .pill').forEach(p=>p.classList.remove('active'));e.target.classList.add('active');state.period=e.target.dataset.period;refreshIso();});
 document.getElementById('sl-opacity').addEventListener('input',function(){state.opacity=this.value/100;document.getElementById('val-opacity').textContent=this.value+'%';refreshIso();});
 document.getElementById('tog-satellite').addEventListener('change',e=>{if(e.target.checked){map.removeLayer(tileOSM);tileSat.addTo(map);}else{map.removeLayer(tileSat);tileOSM.addTo(map);}});
