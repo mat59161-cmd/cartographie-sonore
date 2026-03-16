@@ -14,7 +14,7 @@
     80,
     95
   ],
-  "files": [
+  "base": [
     "iso_T0_H40.geojson",
     "iso_T0_H60.geojson",
     "iso_T0_H80.geojson",
@@ -44,8 +44,34 @@
     "iso_T5_H80.geojson",
     "iso_T5_H95.geojson"
   ],
-  "static": [
-    "BUILDINGS.geojson"
-  ],
-  "total": 28
+  "traffic": [
+    "iso_T0_H40.geojson",
+    "iso_T0_H60.geojson",
+    "iso_T0_H80.geojson",
+    "iso_T0_H95.geojson",
+    "iso_T10_H40.geojson",
+    "iso_T10_H60.geojson",
+    "iso_T10_H80.geojson",
+    "iso_T10_H95.geojson",
+    "iso_T15_H40.geojson",
+    "iso_T15_H60.geojson",
+    "iso_T15_H80.geojson",
+    "iso_T15_H95.geojson",
+    "iso_T20_H40.geojson",
+    "iso_T20_H60.geojson",
+    "iso_T20_H80.geojson",
+    "iso_T20_H95.geojson",
+    "iso_T25_H40.geojson",
+    "iso_T25_H60.geojson",
+    "iso_T25_H80.geojson",
+    "iso_T25_H95.geojson",
+    "iso_T30_H40.geojson",
+    "iso_T30_H60.geojson",
+    "iso_T30_H80.geojson",
+    "iso_T30_H95.geojson",
+    "iso_T5_H40.geojson",
+    "iso_T5_H60.geojson",
+    "iso_T5_H80.geojson",
+    "iso_T5_H95.geojson"
+  ]
 }

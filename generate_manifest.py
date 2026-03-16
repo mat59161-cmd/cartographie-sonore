@@ -1,38 +1,51 @@
 #!/usr/bin/env python3
 """
-Génère manifest.json à partir des fichiers iso_T{X}_H{Y}.geojson présents dans data/.
-Lance-le chaque fois que tu ajoutes/retires des GeoJSON :
+Génère manifest.json pour le viewer cartographique.
 
-    python generate_manifest.py
+Structure attendue :
+  data/
+    base/           ← isosurfaces sans trafic
+      iso_T0_H40.geojson ...
+    traffic/        ← isosurfaces avec trafic
+      iso_T0_H40.geojson ...
+    road_traffic.geojson  ← couche routes (optionnel)
+    manifest.json         ← généré par ce script
 
-Le manifest.json est lu par index.html pour savoir quels fichiers sont disponibles
-(beaucoup plus rapide que de probe chaque fichier un par un).
+Usage : python generate_manifest.py
 """
 
 import json, re, os
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 
-files = sorted(f for f in os.listdir(DATA_DIR) if f.endswith('.geojson'))
-iso_files = [f for f in files if re.match(r'iso_T-?\d+_H\d+\.geojson', f)]
+def scan_folder(folder):
+    path = os.path.join(DATA_DIR, folder)
+    if not os.path.isdir(path):
+        return []
+    return sorted(f for f in os.listdir(path) if re.match(r'iso_T-?\d+_H\d+\.geojson', f))
 
-temps = sorted(set(int(m.group(1)) for f in iso_files if (m := re.search(r'T(-?\d+)', f))))
-hums = sorted(set(int(m.group(1)) for f in iso_files if (m := re.search(r'H(\d+)', f))))
+base_files = scan_folder('base')
+traffic_files = scan_folder('traffic')
+all_files = base_files + traffic_files
+
+temps = sorted(set(int(m.group(1)) for f in all_files if (m := re.search(r'T(-?\d+)', f))))
+hums = sorted(set(int(m.group(1)) for f in all_files if (m := re.search(r'H(\d+)', f))))
 
 manifest = {
     'temperatures': temps,
     'humidities': hums,
-    'files': iso_files,
-    'static': [f for f in files if f not in iso_files],
-    'total': len(iso_files),
+    'base': base_files,
+    'traffic': traffic_files,
 }
 
 out = os.path.join(DATA_DIR, 'manifest.json')
 with open(out, 'w') as f:
     json.dump(manifest, f, indent=2)
 
-print(f'✓ manifest.json généré : {len(iso_files)} isosurfaces ({len(temps)} T° × {len(hums)} H%)')
-if manifest['static']:
-    print(f'  + {len(manifest["static"])} fichiers statiques : {", ".join(manifest["static"])}')
+print(f'✓ manifest.json généré')
 print(f'  Températures : {temps}')
 print(f'  Humidités    : {hums}')
+print(f'  Sans trafic  : {len(base_files)} fichiers dans base/')
+print(f'  Avec trafic  : {len(traffic_files)} fichiers dans traffic/')
+if os.path.exists(os.path.join(DATA_DIR, 'road_traffic.geojson')):
+    print(f'  road_traffic.geojson trouvé ✓')
