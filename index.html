@@ -280,9 +280,11 @@ function reproject(gj){
 // ═══════════════════════════════════════
 function makeIsoLayer(gj){
   const min=getMinLvl();
-  return L.geoJSON(gj,{
+  // Trier : ISOLVL bas en premier (fond), élevé en dernier (dessus) — comme QGIS
+  const sorted={...gj,features:[...gj.features].sort((a,b)=>(a.properties.ISOLVL||0)-(b.properties.ISOLVL||0))};
+  return L.geoJSON(sorted,{
     filter:f=>{const p=f.properties;return(state.period==='ALL'||p.PERIOD===state.period)&&(p.ISOLVL||0)>=min;},
-    style:f=>{const c=colorFor(f.properties.ISOLVL);return{fillColor:c,color:c,weight:.4,fillOpacity:state.opacity,opacity:.7};},
+    style:f=>{const c=colorFor(f.properties.ISOLVL);return{fillColor:c,color:c,weight:1,fillOpacity:state.opacity,opacity:state.opacity};},
     onEachFeature:(f,layer)=>{const p=f.properties,c=colorFor(p.ISOLVL);
       layer.bindPopup(`<div class="popup-level" style="color:${c}">${p.ISOLABEL||p.ISOLVL} dB(A)</div><div class="popup-label">Niveau sonore</div><div class="popup-row"><span class="popup-key">Période</span><span>${p.PERIOD||'—'}</span></div><div class="popup-row"><span class="popup-key">ISOLVL</span><span>${p.ISOLVL}</span></div>`);}
   });
