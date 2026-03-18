@@ -160,8 +160,8 @@
       <div class="slider-ticks" id="ticks-minlvl"></div>
     </div>
     <div class="slider-row">
-      <div class="slider-label"><span>Opacité isosurfaces</span><span class="val" id="val-opacity">70%</span></div>
-      <input type="range" id="sl-opacity" min="0" max="100" value="70">
+      <div class="slider-label"><span>Opacité isosurfaces</span><span class="val" id="val-opacity">100%</span></div>
+      <input type="range" id="sl-opacity" min="0" max="100" value="100">
     </div>
     <div class="toggle-row"><span>Afficher les bâtiments</span><label class="toggle"><input type="checkbox" id="tog-buildings"><span class="toggle-slider"></span></label></div>
     <div class="toggle-row"><span>Afficher les routes (trafic)</span><label class="toggle"><input type="checkbox" id="tog-routes"><span class="toggle-slider"></span></label></div>
@@ -239,7 +239,7 @@ let TEMPERATURES=[],HUMIDITIES=[];
 let availableKeys={base:new Set(),traffic:new Set()};
 
 const state={
-  scenario:'base',tempIndex:0,humIndex:0,period:'DEN',opacity:0.70,
+  scenario:'base',tempIndex:0,humIndex:0,period:'DEN',opacity:1.0,
   hide35:true,minLevel:1,isoLayer:null,isoGeojson:null,
   isoCache:{base:{},traffic:{}},
   staticLayers:[],routeLayer:null,routeData:null,buildingLayer:null,buildingData:null,
@@ -280,14 +280,31 @@ function reproject(gj){
 // ═══════════════════════════════════════
 function makeIsoLayer(gj){
   const min=getMinLvl();
-  // Trier : ISOLVL bas en premier (fond), élevé en dernier (dessus) — comme QGIS
-  const sorted={...gj,features:[...gj.features].sort((a,b)=>(a.properties.ISOLVL||0)-(b.properties.ISOLVL||0))};
-  return L.geoJSON(sorted,{
-    filter:f=>{const p=f.properties;return(state.period==='ALL'||p.PERIOD===state.period)&&(p.ISOLVL||0)>=min;},
-    style:f=>{const c=colorFor(f.properties.ISOLVL);return{fillColor:c,color:c,weight:1,fillOpacity:state.opacity,opacity:state.opacity};},
-    onEachFeature:(f,layer)=>{const p=f.properties,c=colorFor(p.ISOLVL);
-      layer.bindPopup(`<div class="popup-level" style="color:${c}">${p.ISOLABEL||p.ISOLVL} dB(A)</div><div class="popup-label">Niveau sonore</div><div class="popup-row"><span class="popup-key">Période</span><span>${p.PERIOD||'—'}</span></div><div class="popup-row"><span class="popup-key">ISOLVL</span><span>${p.ISOLVL}</span></div>`);}
+  const group=L.layerGroup();
+  // Grouper par ISOLVL, dessiner du plus bas au plus haut
+  const byLvl={};
+  gj.features.forEach(f=>{
+    const p=f.properties;
+    if((state.period!=='ALL'&&p.PERIOD!==state.period)||(p.ISOLVL||0)<min)return;
+    const lvl=p.ISOLVL||0;
+    if(!byLvl[lvl])byLvl[lvl]=[];
+    byLvl[lvl].push(f);
   });
+  // Dessiner chaque ISOLVL dans l'ordre croissant
+  const levels=Object.keys(byLvl).map(Number).sort((a,b)=>a-b);
+  levels.forEach((lvl,idx)=>{
+    const c=colorFor(lvl);
+    const layerGj={type:'FeatureCollection',features:byLvl[lvl]};
+    const layer=L.geoJSON(layerGj,{
+      style:()=>({fillColor:c,color:c,weight:0.5,fillOpacity:1,opacity:0.3}),
+      onEachFeature:(f,layer)=>{const p=f.properties;
+        layer.bindPopup(`<div class="popup-level" style="color:${c}">${p.ISOLABEL||p.ISOLVL} dB(A)</div><div class="popup-label">Niveau sonore</div><div class="popup-row"><span class="popup-key">Période</span><span>${p.PERIOD||'—'}</span></div><div class="popup-row"><span class="popup-key">ISOLVL</span><span>${p.ISOLVL}</span></div>`);}
+    });
+    group.addLayer(layer);
+  });
+  // Appliquer l'opacité globale via le container
+  group._userOpacity=state.opacity;
+  return group;
 }
 
 function makeRouteLayer(gj){
@@ -437,8 +454,16 @@ async function loadIso(){
   }catch(e){if(e.name==='AbortError')return;setStatus(`✗ ${fn} — ${e.message}`,'error');}
   hideLoading();
 }
-function applyIso(gj){if(state.isoLayer)map.removeLayer(state.isoLayer);state.isoGeojson=gj;state.isoLayer=makeIsoLayer(gj);state.isoLayer.addTo(map);updateLayersList();}
-function refreshIso(){if(!state.isoGeojson)return;if(state.isoLayer)map.removeLayer(state.isoLayer);state.isoLayer=makeIsoLayer(state.isoGeojson);state.isoLayer.addTo(map);updateLegend();}
+function applyIso(gj){if(state.isoLayer)map.removeLayer(state.isoLayer);state.isoGeojson=gj;state.isoLayer=makeIsoLayer(gj);state.isoLayer.addTo(map);setIsoOpacity();updateLayersList();}
+function refreshIso(){if(!state.isoGeojson)return;if(state.isoLayer)map.removeLayer(state.isoLayer);state.isoLayer=makeIsoLayer(state.isoGeojson);state.isoLayer.addTo(map);setIsoOpacity();updateLegend();}
+function setIsoOpacity(){
+  if(!state.isoLayer)return;
+  // Appliquer l'opacité au container SVG/Canvas du layer group
+  state.isoLayer.eachLayer(l=>{
+    if(l._container)l._container.style.opacity=state.opacity;
+    else if(l.setStyle)l.eachLayer(sub=>sub.setStyle({fillOpacity:state.opacity}));
+  });
+}
 
 // ═══════════════════════════════════════
 //  ROUTE LAYER (traffic overlay)
