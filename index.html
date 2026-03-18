@@ -7,13 +7,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg:#0b0d11;--panel:#101318;--border:#1e222c;
-    --accent:#e2784a;--accent-dim:rgba(226,120,74,.15);--accent-glow:rgba(226,120,74,.25);
-    --text:#dfe2ea;--muted:#5c6370;--success:#4ade80;
-    --panel-w:320px;--radius:6px;
-    --sc-base:#4a90d9;--sc-traffic:#e2784a;
-  }
+  :root{--bg:#0b0d11;--panel:#101318;--border:#1e222c;--accent:#e2784a;--accent-dim:rgba(226,120,74,.15);--accent-glow:rgba(226,120,74,.25);--text:#dfe2ea;--muted:#5c6370;--success:#4ade80;--panel-w:320px;--radius:6px;--sc-base:#4a90d9;--sc-traffic:#e2784a}
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text);display:flex;height:100vh;overflow:hidden}
   #panel{width:var(--panel-w);min-width:var(--panel-w);background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;z-index:1000;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
@@ -44,14 +38,13 @@
   .toggle-slider{position:absolute;inset:0;background:var(--border);border-radius:20px;cursor:pointer;transition:.2s}
   .toggle-slider:before{content:'';position:absolute;width:14px;height:14px;left:3px;top:3px;background:var(--muted);border-radius:50%;transition:.2s}
   .toggle input:checked+.toggle-slider{background:var(--accent)}.toggle input:checked+.toggle-slider:before{transform:translateX(16px);background:#fff}
-  .layer-item{display:flex;align-items:center;padding:7px 10px;margin-bottom:4px;border-radius:var(--radius);border:1px solid var(--border);font-size:10px;gap:7px;transition:border-color .15s}
-  .layer-item:hover{border-color:rgba(226,120,74,.3)}
+  .layer-item{display:flex;align-items:center;padding:7px 10px;margin-bottom:4px;border-radius:var(--radius);border:1px solid var(--border);font-size:10px;gap:7px}
   .layer-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}.layer-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .layer-type{font-size:9px;color:var(--muted);flex-shrink:0}
-  .layer-item button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;flex-shrink:0}
+  .layer-item button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px}
   .layer-item button:hover{color:var(--accent)}
   .legend-grid{display:flex;flex-direction:column;gap:3px}
-  .legend-row{display:flex;align-items:center;gap:8px;font-size:10px;transition:opacity .2s}.legend-row.hidden-lvl{opacity:.3}
+  .legend-row{display:flex;align-items:center;gap:8px;font-size:10px}.legend-row.hidden-lvl{opacity:.3}
   .legend-swatch{width:20px;height:11px;border-radius:2px;flex-shrink:0;border:1px solid rgba(255,255,255,.06)}
   .env-note{font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6;padding:6px 8px;background:rgba(255,255,255,.02);border-radius:var(--radius);border:1px solid var(--border);min-height:32px}
   #status{padding:10px 20px;font-size:10px;color:var(--muted);border-top:1px solid var(--border);margin-top:auto;display:flex;align-items:center}
@@ -100,14 +93,12 @@
 </style>
 </head>
 <body>
-
 <div id="panel">
   <div class="panel-header">
     <div class="eyebrow">Maîtrise · Cartographie sonore</div>
     <h1>Port de <span>Québec</span></h1>
     <div class="subtitle">NoiseModelling · Isosurfaces interactives</div>
   </div>
-
   <div class="section">
     <div class="section-title"><span>🔀</span> Scénario</div>
     <div class="scenario-pills" id="scenario-pills">
@@ -116,7 +107,6 @@
     </div>
     <div class="scenario-desc" id="scenario-desc">Sources ponctuelles uniquement (vibreur)</div>
   </div>
-
   <div class="section">
     <div class="section-title"><span>🌡️</span> Paramètres environnementaux</div>
     <div class="slider-row">
@@ -141,7 +131,6 @@
       <div class="anim-speed"><select id="anim-speed"><option value="2000">Lent</option><option value="1000" selected>Normal</option><option value="500">Rapide</option></select></div>
     </div>
   </div>
-
   <div class="section">
     <div class="section-title"><span>🕐</span> Période</div>
     <div class="pills" id="period-pills">
@@ -151,7 +140,6 @@
       <button class="pill active" data-period="DEN">DEN</button>
     </div>
   </div>
-
   <div class="section">
     <div class="section-title"><span>👁️</span> Affichage</div>
     <div class="slider-row">
@@ -161,34 +149,27 @@
     </div>
     <div class="slider-row">
       <div class="slider-label"><span>Opacité isosurfaces</span><span class="val" id="val-opacity">100%</span></div>
-      <input type="range" id="sl-opacity" min="0" max="100" value="100">
+      <input type="range" id="sl-opacity" min="10" max="100" value="100">
     </div>
     <div class="toggle-row"><span>Afficher les bâtiments</span><label class="toggle"><input type="checkbox" id="tog-buildings"><span class="toggle-slider"></span></label></div>
     <div class="toggle-row"><span>Afficher les routes (trafic)</span><label class="toggle"><input type="checkbox" id="tog-routes"><span class="toggle-slider"></span></label></div>
     <div class="toggle-row"><span>Fond satellite</span><label class="toggle"><input type="checkbox" id="tog-satellite"><span class="toggle-slider"></span></label></div>
-    <div class="traffic-legend" id="traffic-legend" style="display:none">
-      <b>🚗 Routes — clic pour détails</b><br>
-      Couleur = intensité du trafic (DJMA)
-    </div>
+    <div class="traffic-legend" id="traffic-legend" style="display:none"><b>🚗 Routes — clic pour détails</b><br>Couleur = intensité du trafic (DJMA)</div>
   </div>
-
   <div class="section">
     <div class="section-title"><span>🗂️</span> Couches actives</div>
-    <div id="layers-list"><span style="font-size:10px;color:var(--muted);font-style:italic">Chargement...</span></div>
+    <div id="layers-list"></div>
     <button class="load-btn" onclick="document.getElementById('file-input').click()">+ Glisser ou charger des fichiers</button>
     <input type="file" id="file-input" multiple accept=".geojson,.json">
   </div>
-
   <div class="section">
     <div class="section-title"><span>🎨</span> Légende — dB(A)</div>
     <div class="legend-grid" id="legend"></div>
   </div>
-
   <div id="status"><span class="dot" id="status-dot"></span><span id="status-text">Initialisation...</span></div>
 </div>
-
 <div id="map">
-  <div id="drag-overlay"><div class="drop-icon">🗺️</div><div class="drop-text">Dépose tes fichiers GeoJSON</div><div class="drop-sub">Isosurfaces · Bâtiments · Routes — détection automatique</div></div>
+  <div id="drag-overlay"><div class="drop-icon">🗺️</div><div class="drop-text">Dépose tes fichiers GeoJSON</div><div class="drop-sub">Isosurfaces · Bâtiments · Routes</div></div>
   <div class="config-badge" id="config-badge">
     <span id="badge-scenario" style="font-size:9px;"></span><span class="sep"></span>
     <span>T = <span class="param" id="badge-temp">—</span></span><span class="sep"></span>
@@ -198,60 +179,53 @@
   <div id="db-bar"><div class="bar-title">Niveaux sonores</div><div id="db-bar-items"></div></div>
   <div id="loading"><div class="spinner"></div><span id="loading-text">Chargement...</span></div>
 </div>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 // ═══════════════════════════════════════
 //  CONFIG
 // ═══════════════════════════════════════
-
-// Structure des dossiers :
-// data/
-//   base/          ← iso sans trafic
-//     iso_T0_H40.geojson ...
-//   traffic/       ← iso avec trafic
-//     iso_T0_H40.geojson ...
-//   road_traffic.geojson  ← couche routes (optionnelle)
-//   manifest.json
-
-const DATA_PATH = './data/';
-
-const SCENARIOS = {
-  base:    { folder:'base/',    label:'Sans trafic', desc:'Sources ponctuelles uniquement (vibreur)' },
-  traffic: { folder:'traffic/', label:'Avec trafic', desc:'Trafic routier (Champlain 2024) + vibreur' },
+const DATA_PATH='./data/';
+const SCENARIOS={
+  base:{folder:'base/',label:'Sans trafic',desc:'Sources ponctuelles uniquement (vibreur)'},
+  traffic:{folder:'traffic/',label:'Avec trafic',desc:'Trafic routier (Champlain 2024) + vibreur'},
 };
 
-const PALETTE = [
-  {label:'< 35',isolvl:0,color:'#82a7ac'},{label:'35–40',isolvl:1,color:'#a0bbbf'},
-  {label:'40–45',isolvl:2,color:'#b8d6d1'},{label:'45–50',isolvl:3,color:'#cfe4cc'},
-  {label:'50–55',isolvl:4,color:'#e3f2bf'},{label:'55–60',isolvl:5,color:'#f4c683'},
-  {label:'60–65',isolvl:6,color:'#e87d4d'},{label:'65–70',isolvl:7,color:'#cd463f'},
-  {label:'70–75',isolvl:8,color:'#a11a4d'},{label:'75–80',isolvl:9,color:'#75095d'},
+// Palette EXACTE du SLD tomio — couleurs identiques pour fill ET stroke
+const PALETTE=[
+  {label:'< 35',isolvl:0,color:'#82a7ac'},
+  {label:'35–40',isolvl:1,color:'#a0bbbf'},
+  {label:'40–45',isolvl:2,color:'#b8d6d1'},
+  {label:'45–50',isolvl:3,color:'#cfe4cc'},
+  {label:'50–55',isolvl:4,color:'#e3f2bf'},
+  {label:'55–60',isolvl:5,color:'#f4c683'},
+  {label:'60–65',isolvl:6,color:'#e87d4d'},
+  {label:'65–70',isolvl:7,color:'#cd463f'},
+  {label:'70–75',isolvl:8,color:'#a11a4d'},
+  {label:'75–80',isolvl:9,color:'#75095d'},
   {label:'> 80',isolvl:10,color:'#430a4a'},
 ];
 const colorFor=lvl=>(PALETTE.find(p=>p.isolvl===lvl)||{color:'#888'}).color;
 const TYPE_META={iso:{label:'Isosurfaces',dot:'#e87d4d'},buildings:{label:'Bâtiments',dot:'#4a90d9'},routes:{label:'Routes',dot:'#a0bbbf'},unknown:{label:'GeoJSON',dot:'#888'}};
+const LEVEL_LABELS=['< 35','35','40','45','50','55','60','65','70'];
 
 // ═══════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════
 let TEMPERATURES=[],HUMIDITIES=[];
 let availableKeys={base:new Set(),traffic:new Set()};
-
 const state={
-  scenario:'base',tempIndex:0,humIndex:0,period:'DEN',opacity:1.0,
-  hide35:true,minLevel:1,isoLayer:null,isoGeojson:null,
+  scenario:'base',tempIndex:0,humIndex:0,period:'DEN',
+  opacity:1.0,minLevel:1,
+  isoLayer:null,isoGeojson:null,
   isoCache:{base:{},traffic:{}},
   staticLayers:[],routeLayer:null,routeData:null,buildingLayer:null,buildingData:null,
   animating:false,animTimer:null,
 };
-
 const getTemp=()=>TEMPERATURES[state.tempIndex]??0;
 const getHum=()=>HUMIDITIES[state.humIndex]??0;
 const getKey=()=>`T${getTemp()}_H${getHum()}`;
 const getFolder=()=>SCENARIOS[state.scenario].folder;
 const getFilename=()=>`iso_${getKey()}.geojson`;
-const getMinLvl=()=>state.minLevel;
 
 // ═══════════════════════════════════════
 //  MAP
@@ -276,48 +250,40 @@ function reproject(gj){
 }
 
 // ═══════════════════════════════════════
-//  LAYERS
+//  ISOSURFACE LAYER — rendu identique au SLD
 // ═══════════════════════════════════════
 function makeIsoLayer(gj){
-  const min=getMinLvl();
-  const group=L.layerGroup();
-  // Grouper par ISOLVL, dessiner du plus bas au plus haut
-  const byLvl={};
-  gj.features.forEach(f=>{
+  // Filtrer par période et seuil minimum
+  const filtered={type:'FeatureCollection',features:gj.features.filter(f=>{
     const p=f.properties;
-    if((state.period!=='ALL'&&p.PERIOD!==state.period)||(p.ISOLVL||0)<min)return;
-    const lvl=p.ISOLVL||0;
-    if(!byLvl[lvl])byLvl[lvl]=[];
-    byLvl[lvl].push(f);
+    return p.PERIOD===state.period&&(p.ISOLVL||0)>=state.minLevel;
+  })};
+  return L.geoJSON(filtered,{
+    // Style EXACTEMENT comme le SLD : fill=couleur, stroke=même couleur, weight=1, lineJoin=bevel
+    style:f=>{
+      const c=colorFor(f.properties.ISOLVL);
+      return{fillColor:c,fillOpacity:1,color:c,weight:1,opacity:1,lineJoin:'bevel'};
+    },
+    onEachFeature:(f,layer)=>{
+      const p=f.properties,c=colorFor(p.ISOLVL);
+      layer.bindPopup(`<div class="popup-level" style="color:${c}">${p.ISOLABEL||p.ISOLVL} dB(A)</div><div class="popup-label">Niveau sonore</div><div class="popup-row"><span class="popup-key">Période</span><span>${p.PERIOD||'—'}</span></div><div class="popup-row"><span class="popup-key">ISOLVL</span><span>${p.ISOLVL}</span></div>`);
+    }
   });
-  // Dessiner chaque ISOLVL dans l'ordre croissant
-  const levels=Object.keys(byLvl).map(Number).sort((a,b)=>a-b);
-  levels.forEach((lvl,idx)=>{
-    const c=colorFor(lvl);
-    const layerGj={type:'FeatureCollection',features:byLvl[lvl]};
-    const layer=L.geoJSON(layerGj,{
-      style:()=>({fillColor:c,color:c,weight:0.5,fillOpacity:1,opacity:0.3}),
-      onEachFeature:(f,layer)=>{const p=f.properties;
-        layer.bindPopup(`<div class="popup-level" style="color:${c}">${p.ISOLABEL||p.ISOLVL} dB(A)</div><div class="popup-label">Niveau sonore</div><div class="popup-row"><span class="popup-key">Période</span><span>${p.PERIOD||'—'}</span></div><div class="popup-row"><span class="popup-key">ISOLVL</span><span>${p.ISOLVL}</span></div>`);}
-    });
-    group.addLayer(layer);
-  });
-  // Appliquer l'opacité globale via le container
-  group._userOpacity=state.opacity;
-  return group;
 }
+
+// ═══════════════════════════════════════
+//  OTHER LAYERS
+// ═══════════════════════════════════════
+function makeBuildingLayer(gj){return L.geoJSON(gj,{style:{fillColor:'#1a1f2b',color:'#2d3344',weight:1,fillOpacity:.88},onEachFeature:(f,layer)=>{const p=f.properties;layer.bindPopup(`<div class="popup-level" style="color:#4a90d9;font-size:15px">Bâtiment</div><div class="popup-row"><span class="popup-key">Hauteur</span><span>${p.HEIGHT||p.HEIGHT_WALL||'—'} m</span></div>`);}});}
 
 function makeRouteLayer(gj){
   return L.geoJSON(gj,{
     style:f=>{
       const p=f.properties||{};
-      // Estimer DJMA pour la couleur
-      const lvD=p.LV_D||p.DAY_LV_HOUR||0, hvD=p.HGV_D||p.DAY_HV_HOUR||0;
-      const djma=Math.round((lvD+hvD)*12 + ((p.LV_E||p.EV_LV_HOUR||0)+(p.HGV_E||p.EV_HV_HOUR||0))*4 + ((p.LV_N||p.NIGHT_LV_HOUR||0)+(p.HGV_N||p.NIGHT_HV_HOUR||0))*8);
-      // Gradient : 0→vert, 8000+→rouge
+      const lvD=p.LV_D||p.DAY_LV_HOUR||0,hvD=p.HGV_D||p.DAY_HV_HOUR||0;
+      const djma=Math.round((lvD+hvD)*12+((p.LV_E||p.EV_LV_HOUR||0)+(p.HGV_E||p.EV_HV_HOUR||0))*4+((p.LV_N||p.NIGHT_LV_HOUR||0)+(p.HGV_N||p.NIGHT_HV_HOUR||0))*8);
       const t=Math.min(djma/8000,1);
-      const r=Math.round(100+t*155), g=Math.round(200-t*160), b=Math.round(100-t*60);
-      return{color:`rgb(${r},${g},${b})`,weight:djma>2000?4:djma>500?3:2,opacity:.85};
+      return{color:`rgb(${Math.round(100+t*155)},${Math.round(200-t*160)},${Math.round(100-t*60)})`,weight:djma>2000?4:djma>500?3:2,opacity:.85};
     },
     onEachFeature:(f,layer)=>{
       const p=f.properties||{};
@@ -326,53 +292,29 @@ function makeRouteLayer(gj){
       const pctHV=djma>0?Math.round((hvD*12+hvE*4+hvN*8)/djma*100):0;
       const speed=p.LV_SPD_D||p.DAY_LV_SPEED||'—';
       const roadType=p.SOURCE_ROAD_TYPE||p.ROAD_TYPE||'—';
-
-      layer.bindPopup(`
-        <div class="popup-level" style="color:#a0bbbf;font-size:15px">🚗 Route</div>
-        <div class="popup-label">${roadType}</div>
-        <div class="popup-row"><span class="popup-key">DJMA estimé</span><span><b>${djma.toLocaleString('fr')}</b> véh/j</span></div>
-        <div class="popup-row"><span class="popup-key">% camions</span><span>${pctHV}%</span></div>
-        <div class="popup-row"><span class="popup-key">Vitesse</span><span>${speed} km/h</span></div>
-        <div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1)">
-          <div class="popup-row"><span class="popup-key">Jour (6h-18h)</span><span>${lvD} LV + ${hvD} PL /h</span></div>
-          <div class="popup-row"><span class="popup-key">Soir (18h-22h)</span><span>${lvE} LV + ${hvE} PL /h</span></div>
-          <div class="popup-row"><span class="popup-key">Nuit (22h-6h)</span><span>${lvN} LV + ${hvN} PL /h</span></div>
-        </div>
-      `);
+      layer.bindPopup(`<div class="popup-level" style="color:#a0bbbf;font-size:15px">🚗 Route</div><div class="popup-label">${roadType}</div><div class="popup-row"><span class="popup-key">DJMA estimé</span><span><b>${djma.toLocaleString('fr')}</b> véh/j</span></div><div class="popup-row"><span class="popup-key">% camions</span><span>${pctHV}%</span></div><div class="popup-row"><span class="popup-key">Vitesse</span><span>${speed} km/h</span></div><div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1)"><div class="popup-row"><span class="popup-key">Jour</span><span>${lvD} LV + ${hvD} PL /h</span></div><div class="popup-row"><span class="popup-key">Soir</span><span>${lvE} LV + ${hvE} PL /h</span></div><div class="popup-row"><span class="popup-key">Nuit</span><span>${lvN} LV + ${hvN} PL /h</span></div></div>`);
     }
   });
 }
-
-function makeBuildingLayer(gj){return L.geoJSON(gj,{style:{fillColor:'#1a1f2b',color:'#2d3344',weight:1,fillOpacity:.88},onEachFeature:(f,layer)=>{const p=f.properties;layer.bindPopup(`<div class="popup-level" style="color:#4a90d9;font-size:15px">Bâtiment</div><div class="popup-row"><span class="popup-key">Hauteur</span><span>${p.HEIGHT||p.HEIGHT_WALL||'—'} m</span></div>`);}});}
 
 // ═══════════════════════════════════════
 //  MANIFEST
 // ═══════════════════════════════════════
 async function loadManifest(){
-  try{
-    const r=await fetch(DATA_PATH+'manifest.json');
-    if(r.ok){
-      const m=await r.json();
-      if(m.temperatures)TEMPERATURES=m.temperatures;
-      if(m.humidities)HUMIDITIES=m.humidities;
-      if(m.base)m.base.forEach(f=>{const mt=f.match(/T(-?\d+)_H(\d+)/);if(mt)availableKeys.base.add(`T${mt[1]}_H${mt[2]}`);});
-      if(m.traffic)m.traffic.forEach(f=>{const mt=f.match(/T(-?\d+)_H(\d+)/);if(mt)availableKeys.traffic.add(`T${mt[1]}_H${mt[2]}`);});
-      setStatus(`✓ ${availableKeys.base.size} base + ${availableKeys.traffic.size} traffic`,'ok');
-      return;
-    }
-  }catch(e){}
-
-  // Probe
+  try{const r=await fetch(DATA_PATH+'manifest.json');if(r.ok){const m=await r.json();
+    if(m.temperatures)TEMPERATURES=m.temperatures;if(m.humidities)HUMIDITIES=m.humidities;
+    if(m.base)m.base.forEach(f=>{const mt=f.match(/T(-?\d+)_H(\d+)/);if(mt)availableKeys.base.add(`T${mt[1]}_H${mt[2]}`);});
+    if(m.traffic)m.traffic.forEach(f=>{const mt=f.match(/T(-?\d+)_H(\d+)/);if(mt)availableKeys.traffic.add(`T${mt[1]}_H${mt[2]}`);});
+    setStatus(`✓ ${availableKeys.base.size} base + ${availableKeys.traffic.size} traffic`,'ok');return;
+  }}catch(e){}
   setStatus('Détection des fichiers...','loading');
   const tTest=[-20,-15,-10,-5,0,5,10,15,20,25,30,35,40],hTest=[10,20,30,40,50,60,70,80,90,95,100];
   const ts=new Set(),hs=new Set(),probes=[];
-  for(const t of tTest)for(const h of hTest){
-    for(const [sk,sc] of Object.entries(SCENARIOS))
-      probes.push(fetch(DATA_PATH+sc.folder+`iso_T${t}_H${h}.geojson`,{method:'HEAD'}).then(r=>{if(r.ok){ts.add(t);hs.add(h);availableKeys[sk].add(`T${t}_H${h}`);}}).catch(()=>{}));
-  }
+  for(const t of tTest)for(const h of hTest)for(const[sk,sc]of Object.entries(SCENARIOS))
+    probes.push(fetch(DATA_PATH+sc.folder+`iso_T${t}_H${h}.geojson`,{method:'HEAD'}).then(r=>{if(r.ok){ts.add(t);hs.add(h);availableKeys[sk].add(`T${t}_H${h}`);}}).catch(()=>{}));
   await Promise.all(probes);
   TEMPERATURES=[...ts].sort((a,b)=>a-b);HUMIDITIES=[...hs].sort((a,b)=>a-b);
-  if(!TEMPERATURES.length)setStatus('⚠️ Aucun fichier trouvé — glisse tes fichiers','error');
+  if(!TEMPERATURES.length)setStatus('⚠️ Aucun fichier trouvé','error');
   else setStatus(`✓ ${availableKeys.base.size} base + ${availableKeys.traffic.size} traffic`,'ok');
 }
 
@@ -382,8 +324,7 @@ async function loadManifest(){
 document.getElementById('scenario-pills').addEventListener('click',e=>{
   if(!e.target.classList.contains('scenario-pill'))return;
   document.querySelectorAll('.scenario-pill').forEach(p=>p.classList.remove('active'));
-  e.target.classList.add('active');
-  state.scenario=e.target.dataset.scenario;
+  e.target.classList.add('active');state.scenario=e.target.dataset.scenario;
   document.getElementById('scenario-desc').textContent=SCENARIOS[state.scenario].desc;
   loadIso();
 });
@@ -442,116 +383,139 @@ async function loadIso(){
   document.getElementById('badge-file').textContent=fn.replace('.geojson','');
   document.getElementById('badge-scenario').textContent=SCENARIOS[sc].label;
   document.getElementById('config-badge').style.display='flex';
-
   if(state.isoCache[sc][key]){applyIso(state.isoCache[sc][key]);setStatus(`✓ ${fn} (cache)`,'ok');return;}
-  if(availableKeys[sc].size&&!availableKeys[sc].has(key)){setStatus(`⚠️ ${fn} non disponible (${SCENARIOS[sc].label})`,'error');return;}
+  if(availableKeys[sc].size&&!availableKeys[sc].has(key)){setStatus(`⚠️ ${fn} non disponible`,'error');return;}
   if(loadAbort)loadAbort.abort();loadAbort=new AbortController();
-  showLoading(`${SCENARIOS[sc].label} — ${fn}`);setStatus(`Chargement ${fn}...`,'loading');
-  try{
-    const r=await fetch(url,{signal:loadAbort.signal});if(!r.ok)throw new Error(`HTTP ${r.status}`);
+  showLoading(fn);setStatus(`Chargement ${fn}...`,'loading');
+  try{const r=await fetch(url,{signal:loadAbort.signal});if(!r.ok)throw new Error(`HTTP ${r.status}`);
     let gj=await r.json();gj=reproject(gj);state.isoCache[sc][key]=gj;applyIso(gj);updatePreload();
     setStatus(`✓ ${fn} · ${gj.features.length} entités`,'ok');
   }catch(e){if(e.name==='AbortError')return;setStatus(`✗ ${fn} — ${e.message}`,'error');}
   hideLoading();
 }
-function applyIso(gj){if(state.isoLayer)map.removeLayer(state.isoLayer);state.isoGeojson=gj;state.isoLayer=makeIsoLayer(gj);state.isoLayer.addTo(map);setIsoOpacity();updateLayersList();}
-function refreshIso(){if(!state.isoGeojson)return;if(state.isoLayer)map.removeLayer(state.isoLayer);state.isoLayer=makeIsoLayer(state.isoGeojson);state.isoLayer.addTo(map);setIsoOpacity();updateLegend();}
-function setIsoOpacity(){
+function applyIso(gj){
+  if(state.isoLayer)map.removeLayer(state.isoLayer);
+  state.isoGeojson=gj;
+  state.isoLayer=makeIsoLayer(gj);
+  state.isoLayer.addTo(map);
+  // Appliquer l'opacité globale via CSS sur le container SVG
+  applyOpacity();
+  updateLayersList();
+}
+function refreshIso(){
+  if(!state.isoGeojson)return;
+  if(state.isoLayer)map.removeLayer(state.isoLayer);
+  state.isoLayer=makeIsoLayer(state.isoGeojson);
+  state.isoLayer.addTo(map);
+  applyOpacity();
+  updateLegend();
+}
+function applyOpacity(){
   if(!state.isoLayer)return;
-  // Appliquer l'opacité au container SVG/Canvas du layer group
+  // Utiliser CSS opacity sur le container — n'affecte pas le rendu interne
+  const container=state.isoLayer.getPane&&state.isoLayer.getPane();
+  // Ou directement sur chaque path
   state.isoLayer.eachLayer(l=>{
-    if(l._container)l._container.style.opacity=state.opacity;
-    else if(l.setStyle)l.eachLayer(sub=>sub.setStyle({fillOpacity:state.opacity}));
+    if(l._path)l._path.style.opacity=state.opacity;
   });
 }
 
 // ═══════════════════════════════════════
-//  ROUTE LAYER (traffic overlay)
+//  BUILDINGS & ROUTES TOGGLES
 // ═══════════════════════════════════════
 async function loadRouteTraffic(){
   if(state.routeData)return state.routeData;
-  try{
-    const r=await fetch(DATA_PATH+'road_traffic_final_3857.geojson');
-    if(!r.ok)return null;
-    let gj=await r.json();gj=reproject(gj);
-    state.routeData=gj;return gj;
+  try{const r=await fetch(DATA_PATH+'road_traffic_final_3857.geojson');if(!r.ok)return null;
+    let gj=await r.json();gj=reproject(gj);state.routeData=gj;return gj;
   }catch(e){return null;}
 }
-
-document.getElementById('tog-routes').addEventListener('change',async function(){
-  if(this.checked){
-    document.getElementById('traffic-legend').style.display='block';
-    const gj=await loadRouteTraffic();
-    if(gj){state.routeLayer=makeRouteLayer(gj);state.routeLayer.addTo(map);updateLayersList();}
-    else{setStatus('⚠️ road_traffic_final_3857.geojson non trouvé dans data/','error');this.checked=false;}
-  }else{
-    document.getElementById('traffic-legend').style.display='none';
-    if(state.routeLayer){map.removeLayer(state.routeLayer);state.routeLayer=null;updateLayersList();}
-  }
-});
-
-// ═══════════════════════════════════════
-//  BUILDINGS LAYER
-// ═══════════════════════════════════════
 async function loadBuildings(){
   if(state.buildingData)return state.buildingData;
-  try{
-    const r=await fetch(DATA_PATH+'BUILDINGS.geojson');
-    if(!r.ok)return null;
-    let gj=await r.json();gj=reproject(gj);
-    state.buildingData=gj;return gj;
+  try{const r=await fetch(DATA_PATH+'BUILDINGS.geojson');if(!r.ok)return null;
+    let gj=await r.json();gj=reproject(gj);state.buildingData=gj;return gj;
   }catch(e){return null;}
 }
-
+document.getElementById('tog-routes').addEventListener('change',async function(){
+  if(this.checked){document.getElementById('traffic-legend').style.display='block';
+    const gj=await loadRouteTraffic();
+    if(gj){state.routeLayer=makeRouteLayer(gj);state.routeLayer.addTo(map);updateLayersList();}
+    else{setStatus('⚠️ road_traffic_final_3857.geojson non trouvé','error');this.checked=false;}
+  }else{document.getElementById('traffic-legend').style.display='none';
+    if(state.routeLayer){map.removeLayer(state.routeLayer);state.routeLayer=null;updateLayersList();}}
+});
 document.getElementById('tog-buildings').addEventListener('change',async function(){
-  if(this.checked){
-    const gj=await loadBuildings();
+  if(this.checked){const gj=await loadBuildings();
     if(gj){state.buildingLayer=makeBuildingLayer(gj);state.buildingLayer.addTo(map);updateLayersList();}
-    else{setStatus('⚠️ BUILDINGS.geojson non trouvé dans data/','error');this.checked=false;}
-  }else{
-    if(state.buildingLayer){map.removeLayer(state.buildingLayer);state.buildingLayer=null;updateLayersList();}
-  }
+    else{setStatus('⚠️ BUILDINGS.geojson non trouvé','error');this.checked=false;}
+  }else{if(state.buildingLayer){map.removeLayer(state.buildingLayer);state.buildingLayer=null;updateLayersList();}}
 });
 
 // ═══════════════════════════════════════
-//  DROPPED FILES
+//  DRAG & DROP / FILES
 // ═══════════════════════════════════════
-function addDroppedFile(name,gj){
-  gj=reproject(gj);const type=detectType(gj,name);
-  if(type==='iso'){
-    const m=name.match(/T(-?\d+)_H(\d+)/i);
-    if(m){
-      const key=`T${m[1]}_H${m[2]}`,t=+m[1],h=+m[2];
-      // Deviner le scénario par le nom ou mettre dans le scénario actif
-      const sc=name.toLowerCase().includes('traffic')?'traffic':'base';
-      state.isoCache[sc][key]=gj;availableKeys[sc].add(key);
-      if(!TEMPERATURES.includes(t)){TEMPERATURES.push(t);TEMPERATURES.sort((a,b)=>a-b);}
-      if(!HUMIDITIES.includes(h)){HUMIDITIES.push(h);HUMIDITIES.sort((a,b)=>a-b);}
-      setupSliders();
-      if(sc===state.scenario&&key===getKey())applyIso(gj);
-      updatePreload();setStatus(`✓ ${name} → ${SCENARIOS[sc].label} [${key}]`,'ok');
-    }else{applyIso(gj);setStatus(`✓ ${name}`,'ok');}
-    updateLayersList();return;
-  }
-  if(type==='routes'){
-    state.routeData=gj;
-    if(document.getElementById('tog-routes').checked){
-      if(state.routeLayer)map.removeLayer(state.routeLayer);
-      state.routeLayer=makeRouteLayer(gj);state.routeLayer.addTo(map);
-    }
-    setStatus(`✓ ${name} (routes trafic)`,'ok');updateLayersList();return;
-  }
-  let ll;if(type==='buildings')ll=makeBuildingLayer(gj);else ll=L.geoJSON(gj);
-  ll.addTo(map);state.staticLayers.push({name,type,leafletLayer:ll});updateLayersList();
-  setStatus(`✓ "${name}" · ${TYPE_META[type].label}`,'ok');
-}
 function detectType(gj,fn){
   if(fn){const f=fn.toLowerCase();if(f.includes('iso')||f.includes('noise')||f.includes('lvl'))return'iso';if(f.includes('build')||f.includes('batiment'))return'buildings';if(f.includes('route')||f.includes('road')||f.includes('traffic'))return'routes';}
   if(!gj.features?.length)return'unknown';const p=gj.features[0].properties||{},g=gj.features[0].geometry?.type;
   if('ISOLVL'in p)return'iso';if('HEIGHT_WALL'in p||'ID_BUILD'in p)return'buildings';
   if(g==='LineString'||g==='MultiLineString')return'routes';return'unknown';
 }
+function addDroppedFile(name,gj){
+  gj=reproject(gj);const type=detectType(gj,name);
+  if(type==='iso'){const m=name.match(/T(-?\d+)_H(\d+)/i);
+    if(m){const key=`T${m[1]}_H${m[2]}`,t=+m[1],h=+m[2],sc=name.toLowerCase().includes('traffic')?'traffic':'base';
+      state.isoCache[sc][key]=gj;availableKeys[sc].add(key);
+      if(!TEMPERATURES.includes(t)){TEMPERATURES.push(t);TEMPERATURES.sort((a,b)=>a-b);}
+      if(!HUMIDITIES.includes(h)){HUMIDITIES.push(h);HUMIDITIES.sort((a,b)=>a-b);}
+      setupSliders();if(sc===state.scenario&&key===getKey())applyIso(gj);
+      updatePreload();setStatus(`✓ ${name} → ${SCENARIOS[sc].label} [${key}]`,'ok');
+    }else{applyIso(gj);setStatus(`✓ ${name}`,'ok');}
+    updateLayersList();return;
+  }
+  if(type==='routes'){state.routeData=gj;if(document.getElementById('tog-routes').checked){
+    if(state.routeLayer)map.removeLayer(state.routeLayer);state.routeLayer=makeRouteLayer(gj);state.routeLayer.addTo(map);}
+    setStatus(`✓ ${name} (routes)`,'ok');updateLayersList();return;}
+  let ll;if(type==='buildings')ll=makeBuildingLayer(gj);else ll=L.geoJSON(gj);
+  ll.addTo(map);state.staticLayers.push({name,type,leafletLayer:ll});updateLayersList();setStatus(`✓ ${name}`,'ok');
+}
 function removeStaticLayer(i){map.removeLayer(state.staticLayers[i].leafletLayer);state.staticLayers.splice(i,1);updateLayersList();}
+
+const mapEl=document.getElementById('map'),ov=document.getElementById('drag-overlay');let dcc=0;
+mapEl.addEventListener('dragenter',e=>{e.preventDefault();dcc++;ov.classList.add('active');});
+mapEl.addEventListener('dragleave',()=>{dcc--;if(dcc<=0){dcc=0;ov.classList.remove('active');}});
+mapEl.addEventListener('dragover',e=>e.preventDefault());
+mapEl.addEventListener('drop',e=>{e.preventDefault();dcc=0;ov.classList.remove('active');
+  const files=Array.from(e.dataTransfer.files).filter(f=>/\.(geojson|json)$/i.test(f.name));
+  if(!files.length){setStatus('⚠️ .geojson requis','error');return;}
+  let n=0;files.forEach(file=>{const r=new FileReader();r.onload=ev=>{try{addDroppedFile(file.name,JSON.parse(ev.target.result));}catch{}n++;if(n===files.length)setStatus(`✓ ${n} fichier(s)`,'ok');};r.readAsText(file);});
+});
+document.getElementById('file-input').addEventListener('change',e=>{Array.from(e.target.files).forEach(file=>{const r=new FileReader();r.onload=ev=>{try{addDroppedFile(file.name,JSON.parse(ev.target.result));}catch{}};r.readAsText(file);});e.target.value='';});
+
+// ═══════════════════════════════════════
+//  CONTROLS
+// ═══════════════════════════════════════
+document.getElementById('sl-minlvl').addEventListener('input',function(){
+  state.minLevel=+this.value;
+  document.getElementById('val-minlvl').textContent='≥ '+LEVEL_LABELS[state.minLevel]+' dB';
+  refreshIso();updateLegend();
+});
+document.getElementById('ticks-minlvl').innerHTML=LEVEL_LABELS.map(l=>`<span>${l}</span>`).join('');
+
+document.getElementById('period-pills').addEventListener('click',e=>{
+  if(!e.target.classList.contains('pill'))return;
+  document.querySelectorAll('#period-pills .pill').forEach(p=>p.classList.remove('active'));
+  e.target.classList.add('active');state.period=e.target.dataset.period;refreshIso();
+});
+
+document.getElementById('sl-opacity').addEventListener('input',function(){
+  state.opacity=this.value/100;
+  document.getElementById('val-opacity').textContent=this.value+'%';
+  applyOpacity();
+});
+
+document.getElementById('tog-satellite').addEventListener('change',e=>{
+  if(e.target.checked){map.removeLayer(tileOSM);tileSat.addTo(map);}
+  else{map.removeLayer(tileSat);tileOSM.addTo(map);}
+});
 
 // ═══════════════════════════════════════
 //  LAYERS LIST
@@ -560,32 +524,16 @@ function updateLayersList(){
   const el=document.getElementById('layers-list'),items=[];
   if(state.isoLayer)items.push(`<div class="layer-item"><div class="layer-dot" style="background:${TYPE_META.iso.dot}"></div><div class="layer-name">${getFilename().replace('.geojson','')}</div><div class="layer-type">${SCENARIOS[state.scenario].label}</div></div>`);
   if(state.buildingLayer)items.push(`<div class="layer-item"><div class="layer-dot" style="background:${TYPE_META.buildings.dot}"></div><div class="layer-name">BUILDINGS</div><div class="layer-type">Bâtiments</div></div>`);
-  if(state.routeLayer)items.push(`<div class="layer-item"><div class="layer-dot" style="background:${TYPE_META.routes.dot}"></div><div class="layer-name">road_traffic</div><div class="layer-type">Trafic routier</div></div>`);
-  state.staticLayers.forEach((l,i)=>items.push(`<div class="layer-item"><div class="layer-dot" style="background:${TYPE_META[l.type].dot}"></div><div class="layer-name" title="${l.name}">${l.name}</div><div class="layer-type">${TYPE_META[l.type].label}</div><button onclick="removeStaticLayer(${i})">✕</button></div>`));
+  if(state.routeLayer)items.push(`<div class="layer-item"><div class="layer-dot" style="background:${TYPE_META.routes.dot}"></div><div class="layer-name">road_traffic</div><div class="layer-type">Trafic</div></div>`);
+  state.staticLayers.forEach((l,i)=>items.push(`<div class="layer-item"><div class="layer-dot" style="background:${TYPE_META[l.type].dot}"></div><div class="layer-name">${l.name}</div><div class="layer-type">${TYPE_META[l.type].label}</div><button onclick="removeStaticLayer(${i})">✕</button></div>`));
   el.innerHTML=items.length?items.join(''):'<span style="font-size:10px;color:var(--muted);font-style:italic">Aucune couche</span>';
 }
-
-// ═══════════════════════════════════════
-//  CONTROLS
-// ═══════════════════════════════════════
-const LEVEL_LABELS=['< 35','35','40','45','50','55','60','65','70'];
-document.getElementById('sl-minlvl').addEventListener('input',function(){
-  state.minLevel=+this.value;
-  document.getElementById('val-minlvl').textContent='≥ '+LEVEL_LABELS[state.minLevel]+' dB';
-  refreshIso();updateLegend();
-});
-// Init ticks for min level
-document.getElementById('ticks-minlvl').innerHTML=LEVEL_LABELS.map((l,i)=>`<span>${l}</span>`).join('');
-document.getElementById('period-pills').addEventListener('click',e=>{if(!e.target.classList.contains('pill'))return;document.querySelectorAll('#period-pills .pill').forEach(p=>p.classList.remove('active'));e.target.classList.add('active');state.period=e.target.dataset.period;refreshIso();});
-document.getElementById('sl-opacity').addEventListener('input',function(){state.opacity=this.value/100;document.getElementById('val-opacity').textContent=this.value+'%';refreshIso();});
-document.getElementById('tog-satellite').addEventListener('change',e=>{if(e.target.checked){map.removeLayer(tileOSM);tileSat.addTo(map);}else{map.removeLayer(tileSat);tileOSM.addTo(map);}});
 
 // ═══════════════════════════════════════
 //  ANIMATION
 // ═══════════════════════════════════════
 function toggleAnimation(){state.animating?stopAnim():startAnim();}
-function startAnim(){
-  if(!TEMPERATURES.length)return;state.animating=true;
+function startAnim(){if(!TEMPERATURES.length)return;state.animating=true;
   document.getElementById('btn-animate').classList.add('playing');document.getElementById('anim-icon').textContent='⏸';
   let idx=state.tempIndex;const speed=+document.getElementById('anim-speed').value;
   (function step(){if(!state.animating)return;document.getElementById('sl-temp').value=idx;onTemp(idx);
@@ -595,42 +543,19 @@ function startAnim(){
 function stopAnim(){state.animating=false;clearTimeout(state.animTimer);document.getElementById('btn-animate').classList.remove('playing');document.getElementById('anim-icon').textContent='▶';}
 
 // ═══════════════════════════════════════
-//  DRAG & DROP
-// ═══════════════════════════════════════
-const mapEl=document.getElementById('map'),ov=document.getElementById('drag-overlay');let dcc=0;
-mapEl.addEventListener('dragenter',e=>{e.preventDefault();dcc++;ov.classList.add('active');});
-mapEl.addEventListener('dragleave',()=>{dcc--;if(dcc<=0){dcc=0;ov.classList.remove('active');}});
-mapEl.addEventListener('dragover',e=>e.preventDefault());
-mapEl.addEventListener('drop',e=>{e.preventDefault();dcc=0;ov.classList.remove('active');
-  const files=Array.from(e.dataTransfer.files).filter(f=>/\.(geojson|json)$/i.test(f.name));
-  if(!files.length){setStatus('⚠️ Utilise des .geojson','error');return;}
-  let n=0;files.forEach(file=>{const r=new FileReader();r.onload=ev=>{try{addDroppedFile(file.name,JSON.parse(ev.target.result));}catch{setStatus('⚠️ Erreur : '+file.name,'error');}n++;if(n===files.length)setStatus(`✓ ${n} fichier(s) chargé(s)`,'ok');};r.readAsText(file);});
-});
-document.getElementById('file-input').addEventListener('change',e=>{
-  Array.from(e.target.files).forEach(file=>{const r=new FileReader();r.onload=ev=>{try{addDroppedFile(file.name,JSON.parse(ev.target.result));}catch{}};r.readAsText(file);});e.target.value='';
-});
-
-// ═══════════════════════════════════════
-//  STATUS
+//  STATUS & LEGEND
 // ═══════════════════════════════════════
 function setStatus(msg,type='ok'){document.getElementById('status-text').textContent=msg;const d=document.getElementById('status-dot');d.className='dot';if(type==='loading')d.classList.add('loading');else if(type==='error')d.classList.add('error');}
 function showLoading(msg){document.getElementById('loading-text').textContent=msg;document.getElementById('loading').classList.add('visible');}
 function hideLoading(){document.getElementById('loading').classList.remove('visible');}
-
-// ═══════════════════════════════════════
-//  LEGEND
-// ═══════════════════════════════════════
-function updateLegend(){const min=getMinLvl();document.querySelectorAll('.legend-row').forEach(r=>r.classList.toggle('hidden-lvl',+r.dataset.lvl<min));}
+function updateLegend(){document.querySelectorAll('.legend-row').forEach(r=>r.classList.toggle('hidden-lvl',+r.dataset.lvl<state.minLevel));}
 document.getElementById('legend').innerHTML=PALETTE.map(p=>`<div class="legend-row${p.isolvl<1?' hidden-lvl':''}" data-lvl="${p.isolvl}"><div class="legend-swatch" style="background:${p.color}"></div><span>${p.label} dB(A)</span></div>`).join('');
 document.getElementById('db-bar-items').innerHTML=[...PALETTE].reverse().map(p=>`<div class="bar-item"><div class="bar-swatch" style="background:${p.color}"></div><span>${p.label}</span></div>`).join('');
 
 // ═══════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════
-async function init(){
-  await loadManifest();setupSliders();updateLayersList();
-  if(TEMPERATURES.length&&HUMIDITIES.length)loadIso();
-}
+async function init(){await loadManifest();setupSliders();updateLayersList();if(TEMPERATURES.length&&HUMIDITIES.length)loadIso();}
 init();
 </script>
 </body>
