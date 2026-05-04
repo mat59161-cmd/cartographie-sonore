@@ -81,12 +81,19 @@
   .popup-level{font-size:18px;font-weight:700;font-family:'Instrument Sans',sans-serif;margin-bottom:2px}
   .popup-label{font-size:10px;color:var(--muted);margin-bottom:8px}
   .popup-row{display:flex;justify-content:space-between;gap:12px;margin-top:4px}.popup-key{color:var(--muted)}
-  .scenario-pills{display:flex;gap:0;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)}
-  .scenario-pill{flex:1;padding:8px 6px;text-align:center;font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;background:transparent;color:var(--muted);border:none;border-right:1px solid var(--border)}
-  .scenario-pill:last-child{border-right:none}.scenario-pill:hover{color:var(--text);background:rgba(255,255,255,.03)}
-  .scenario-pill.active{color:#fff;font-weight:500}
-  .scenario-pill.active[data-scenario="base"]{background:var(--sc-base)}
-  .scenario-pill.active[data-scenario="traffic"]{background:var(--sc-traffic)}
+  .scenario-pills{display:flex;flex-direction:column;gap:4px;border-radius:var(--radius);overflow:hidden}
+  .scenario-pill{width:100%;padding:8px 10px;text-align:left;font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:var(--radius);display:flex;align-items:center;gap:8px}
+  .scenario-pill:hover{color:var(--text);background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.15)}
+  .scenario-pill.active{color:#fff;font-weight:500;border-color:transparent}
+  .scenario-pill.active[data-scenario="vibreur"]{background:#4a90d9}
+  .scenario-pill.active[data-scenario="vibreur_trafic"]{background:#6ba7c9}
+  .scenario-pill.active[data-scenario="hx50"]{background:#8e44ad}
+  .scenario-pill.active[data-scenario="hx50_trafic"]{background:#b47ac9}
+  .scenario-pill.active[data-scenario="tout"]{background:#e2784a}
+  .sc-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .sc-label{flex:1}
+  .sc-tag{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+  .scenario-pill.active .sc-tag{color:rgba(255,255,255,.7)}
   .scenario-desc{font-size:9px;color:var(--muted);margin-top:8px;line-height:1.5;padding:4px 0}
   .traffic-legend{font-size:9px;color:var(--muted);margin-top:8px;line-height:1.6;padding:6px 8px;background:rgba(255,255,255,.02);border-radius:var(--radius);border:1px solid var(--border)}
   .traffic-legend b{color:var(--text)}
@@ -102,10 +109,13 @@
   <div class="section">
     <div class="section-title"><span>🔀</span> Scénario</div>
     <div class="scenario-pills" id="scenario-pills">
-      <button class="scenario-pill active" data-scenario="base">Sans trafic</button>
-      <button class="scenario-pill" data-scenario="traffic">Avec trafic</button>
+      <button class="scenario-pill active" data-scenario="vibreur"><span class="sc-dot" style="background:#4a90d9"></span><span class="sc-label">Vibreur seul</span><span class="sc-tag">base</span></button>
+      <button class="scenario-pill" data-scenario="vibreur_trafic"><span class="sc-dot" style="background:#6ba7c9"></span><span class="sc-label">Vibreur + trafic</span><span class="sc-tag">+road</span></button>
+      <button class="scenario-pill" data-scenario="hx50"><span class="sc-dot" style="background:#8e44ad"></span><span class="sc-label">HX50 seule</span><span class="sc-tag">base</span></button>
+      <button class="scenario-pill" data-scenario="hx50_trafic"><span class="sc-dot" style="background:#b47ac9"></span><span class="sc-label">HX50 + trafic</span><span class="sc-tag">+road</span></button>
+      <button class="scenario-pill" data-scenario="tout"><span class="sc-dot" style="background:#e2784a"></span><span class="sc-label">Tout combiné</span><span class="sc-tag">full</span></button>
     </div>
-    <div class="scenario-desc" id="scenario-desc">Sources ponctuelles uniquement (vibreur)</div>
+    <div class="scenario-desc" id="scenario-desc">Source ponctuelle vibreur (PK 79 existant)</div>
   </div>
   <div class="section">
     <div class="section-title"><span>🌡️</span> Paramètres environnementaux</div>
@@ -186,8 +196,11 @@
 // ═══════════════════════════════════════
 const DATA_PATH='./data/';
 const SCENARIOS={
-  base:{folder:'base/',label:'Sans trafic',desc:'Sources ponctuelles uniquement (vibreur)'},
-  traffic:{folder:'traffic/',label:'Avec trafic',desc:'Trafic routier (Champlain 2024) + vibreur'},
+  vibreur:        {folder:'vibreur/',        label:'Vibreur seul',     desc:'Source ponctuelle vibreur seule (pas de trafic, pas de HX50)'},
+  vibreur_trafic: {folder:'vibreur_trafic/', label:'Vibreur + trafic', desc:'Vibreur + trafic routier (Bd Champlain 2024 + routes locales)'},
+  hx50:           {folder:'hx50/',           label:'HX50 seule',       desc:'Ditch Witch HX50 seule (pas de trafic, pas de vibreur)'},
+  hx50_trafic:    {folder:'hx50_trafic/',    label:'HX50 + trafic',    desc:'HX50 + trafic routier'},
+  tout:           {folder:'tout/',           label:'Tout combiné',     desc:'Vibreur + HX50 + trafic routier — scénario complet'},
 };
 
 // Palette EXACTE du SLD tomio — couleurs identiques pour fill ET stroke
@@ -212,12 +225,12 @@ const LEVEL_LABELS=['< 35','35','40','45','50','55','60','65','70'];
 //  STATE
 // ═══════════════════════════════════════
 let TEMPERATURES=[],HUMIDITIES=[];
-let availableKeys={base:new Set(),traffic:new Set()};
+let availableKeys={vibreur:new Set(),vibreur_trafic:new Set(),hx50:new Set(),hx50_trafic:new Set(),tout:new Set()};
 const state={
-  scenario:'base',tempIndex:0,humIndex:0,period:'DEN',
+  scenario:'vibreur',tempIndex:0,humIndex:0,period:'DEN',
   opacity:1.0,minLevel:1,
   isoLayer:null,isoGeojson:null,
-  isoCache:{base:{},traffic:{}},
+  isoCache:{vibreur:{},vibreur_trafic:{},hx50:{},hx50_trafic:{},tout:{}},
   staticLayers:[],routeLayer:null,routeData:null,buildingLayer:null,buildingData:null,
   animating:false,animTimer:null,
 };
@@ -303,9 +316,11 @@ function makeRouteLayer(gj){
 async function loadManifest(){
   try{const r=await fetch(DATA_PATH+'manifest.json');if(r.ok){const m=await r.json();
     if(m.temperatures)TEMPERATURES=m.temperatures;if(m.humidities)HUMIDITIES=m.humidities;
-    if(m.base)m.base.forEach(f=>{const mt=f.match(/T(-?\d+)_H(\d+)/);if(mt)availableKeys.base.add(`T${mt[1]}_H${mt[2]}`);});
-    if(m.traffic)m.traffic.forEach(f=>{const mt=f.match(/T(-?\d+)_H(\d+)/);if(mt)availableKeys.traffic.add(`T${mt[1]}_H${mt[2]}`);});
-    setStatus(`✓ ${availableKeys.base.size} base + ${availableKeys.traffic.size} traffic`,'ok');return;
+    for(const sk of Object.keys(SCENARIOS)){
+      if(m[sk])m[sk].forEach(f=>{const mt=f.match(/T(-?\d+)_H(\d+)/);if(mt)availableKeys[sk].add(`T${mt[1]}_H${mt[2]}`);});
+    }
+    const total=Object.values(availableKeys).reduce((s,v)=>s+v.size,0);
+    setStatus(`✓ Manifest : ${total} cartes sur 5 scénarios`,'ok');return;
   }}catch(e){}
   setStatus('Détection des fichiers...','loading');
   const tTest=[-20,-15,-10,-5,0,5,10,15,20,25,30,35,40],hTest=[10,20,30,40,50,60,70,80,90,95,100];
@@ -314,17 +329,18 @@ async function loadManifest(){
     probes.push(fetch(DATA_PATH+sc.folder+`iso_T${t}_H${h}.geojson`,{method:'HEAD'}).then(r=>{if(r.ok){ts.add(t);hs.add(h);availableKeys[sk].add(`T${t}_H${h}`);}}).catch(()=>{}));
   await Promise.all(probes);
   TEMPERATURES=[...ts].sort((a,b)=>a-b);HUMIDITIES=[...hs].sort((a,b)=>a-b);
+  const total=Object.values(availableKeys).reduce((s,v)=>s+v.size,0);
   if(!TEMPERATURES.length)setStatus('⚠️ Aucun fichier trouvé','error');
-  else setStatus(`✓ ${availableKeys.base.size} base + ${availableKeys.traffic.size} traffic`,'ok');
+  else setStatus(`✓ ${total} cartes détectées sur 5 scénarios`,'ok');
 }
 
 // ═══════════════════════════════════════
 //  SCENARIO
 // ═══════════════════════════════════════
 document.getElementById('scenario-pills').addEventListener('click',e=>{
-  if(!e.target.classList.contains('scenario-pill'))return;
+  const pill=e.target.closest('.scenario-pill');if(!pill)return;
   document.querySelectorAll('.scenario-pill').forEach(p=>p.classList.remove('active'));
-  e.target.classList.add('active');state.scenario=e.target.dataset.scenario;
+  pill.classList.add('active');state.scenario=pill.dataset.scenario;
   document.getElementById('scenario-desc').textContent=SCENARIOS[state.scenario].desc;
   loadIso();
 });
@@ -343,7 +359,7 @@ function setupSliders(){
   initTicks();updateEnv();updatePreload();
 }
 function initTicks(){
-  const allKeys=new Set([...availableKeys.base,...availableKeys.traffic]);
+  const allKeys=new Set();for(const sk of Object.keys(availableKeys))for(const k of availableKeys[sk])allKeys.add(k);
   const tt=document.getElementById('ticks-temp');
   tt.innerHTML=TEMPERATURES.map((t,i)=>{const has=HUMIDITIES.some(h=>allKeys.has(`T${t}_H${h}`));return`<span data-i="${i}" class="${i===state.tempIndex?'tick-active':''} ${!has?'unavailable':''}">${t}°</span>`;}).join('');
   tt.onclick=e=>{const i=e.target.dataset.i;if(i!==undefined){document.getElementById('sl-temp').value=i;onTemp(+i);}};
@@ -462,7 +478,14 @@ function detectType(gj,fn){
 function addDroppedFile(name,gj){
   gj=reproject(gj);const type=detectType(gj,name);
   if(type==='iso'){const m=name.match(/T(-?\d+)_H(\d+)/i);
-    if(m){const key=`T${m[1]}_H${m[2]}`,t=+m[1],h=+m[2],sc=name.toLowerCase().includes('traffic')?'traffic':'base';
+    if(m){const key=`T${m[1]}_H${m[2]}`,t=+m[1],h=+m[2];
+      const lname=name.toLowerCase();
+      let sc='vibreur';
+      if(lname.includes('tout')||lname.includes('full')||lname.includes('all'))sc='tout';
+      else if(lname.includes('hx50')&&(lname.includes('traf')||lname.includes('road')))sc='hx50_trafic';
+      else if(lname.includes('hx50'))sc='hx50';
+      else if(lname.includes('traf')||lname.includes('road'))sc='vibreur_trafic';
+      // sinon vibreur (défaut)
       state.isoCache[sc][key]=gj;availableKeys[sc].add(key);
       if(!TEMPERATURES.includes(t)){TEMPERATURES.push(t);TEMPERATURES.sort((a,b)=>a-b);}
       if(!HUMIDITIES.includes(h)){HUMIDITIES.push(h);HUMIDITIES.sort((a,b)=>a-b);}
