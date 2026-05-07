@@ -163,6 +163,7 @@
     </div>
     <div class="toggle-row"><span>Afficher les bâtiments</span><label class="toggle"><input type="checkbox" id="tog-buildings"><span class="toggle-slider"></span></label></div>
     <div class="toggle-row"><span>Afficher les routes (trafic)</span><label class="toggle"><input type="checkbox" id="tog-routes"><span class="toggle-slider"></span></label></div>
+    <div class="toggle-row" id="row-dem"><span>Avec topographie (DEM) <span style="font-size:9px;color:var(--muted)">— scénario "Tout"</span></span><label class="toggle"><input type="checkbox" id="tog-dem"><span class="toggle-slider"></span></label></div>
     <div class="toggle-row"><span>Fond satellite</span><label class="toggle"><input type="checkbox" id="tog-satellite"><span class="toggle-slider"></span></label></div>
     <div class="traffic-legend" id="traffic-legend" style="display:none"><b>🚗 Routes — clic pour détails</b><br>Couleur = intensité du trafic (DJMA)</div>
   </div>
@@ -201,6 +202,7 @@ const SCENARIOS={
   hx50:           {folder:'hx50/',           label:'HX50 seule',       desc:'Ditch Witch HX50 seule (pas de trafic, pas de vibreur)'},
   hx50_trafic:    {folder:'hx50_trafic/',    label:'HX50 + trafic',    desc:'HX50 + trafic routier'},
   tout:           {folder:'tout/',           label:'Tout combiné',     desc:'Vibreur + HX50 + trafic routier — scénario complet'},
+  tout_dem:       {folder:'tout_dem/',       label:'Tout combiné + DEM', desc:'Idem "Tout combiné" mais avec topographie réelle (DEM) prise en compte'},
 };
 
 // Palette EXACTE du SLD tomio — couleurs identiques pour fill ET stroke
@@ -225,19 +227,25 @@ const LEVEL_LABELS=['< 35','35','40','45','50','55','60','65','70'];
 //  STATE
 // ═══════════════════════════════════════
 let TEMPERATURES=[],HUMIDITIES=[];
-let availableKeys={vibreur:new Set(),vibreur_trafic:new Set(),hx50:new Set(),hx50_trafic:new Set(),tout:new Set()};
+let availableKeys={vibreur:new Set(),vibreur_trafic:new Set(),hx50:new Set(),hx50_trafic:new Set(),tout:new Set(),tout_dem:new Set()};
 const state={
   scenario:'vibreur',tempIndex:0,humIndex:0,period:'DEN',
-  opacity:1.0,minLevel:1,
+  opacity:1.0,minLevel:1,useDem:false,
   isoLayer:null,isoGeojson:null,
-  isoCache:{vibreur:{},vibreur_trafic:{},hx50:{},hx50_trafic:{},tout:{}},
+  isoCache:{vibreur:{},vibreur_trafic:{},hx50:{},hx50_trafic:{},tout:{},tout_dem:{}},
   staticLayers:[],routeLayer:null,routeData:null,buildingLayer:null,buildingData:null,
   animating:false,animTimer:null,
 };
 const getTemp=()=>TEMPERATURES[state.tempIndex]??0;
 const getHum=()=>HUMIDITIES[state.humIndex]??0;
 const getKey=()=>`T${getTemp()}_H${getHum()}`;
-const getFolder=()=>SCENARIOS[state.scenario].folder;
+// getActiveScenario : retourne le scénario réellement à charger
+// (si "tout" + DEM activé, on bascule sur "tout_dem")
+const getActiveScenario=()=>{
+  if(state.scenario==='tout' && state.useDem) return 'tout_dem';
+  return state.scenario;
+};
+const getFolder=()=>SCENARIOS[getActiveScenario()].folder;
 const getFilename=()=>`iso_${getKey()}.geojson`;
 
 // ═══════════════════════════════════════
@@ -342,6 +350,7 @@ document.getElementById('scenario-pills').addEventListener('click',e=>{
   document.querySelectorAll('.scenario-pill').forEach(p=>p.classList.remove('active'));
   pill.classList.add('active');state.scenario=pill.dataset.scenario;
   document.getElementById('scenario-desc').textContent=SCENARIOS[state.scenario].desc;
+  updateDemToggleState();
   loadIso();
 });
 
@@ -372,7 +381,7 @@ function updateTicks(){
   document.querySelectorAll('#ticks-hum span').forEach((el,i)=>el.classList.toggle('tick-active',i===state.humIndex));
 }
 function updatePreload(){
-  const sc=state.scenario,c=Object.keys(state.isoCache[sc]).length,t=availableKeys[sc].size;
+  const sc=getActiveScenario(),c=Object.keys(state.isoCache[sc]).length,t=availableKeys[sc].size;
   document.getElementById('preload-info').innerHTML=t?`📦 <span class="count">${c}</span>/${t} en cache (${SCENARIOS[sc].label})`:'';
 }
 function onTemp(i){state.tempIndex=i;document.getElementById('val-temp').textContent=getTemp()+'°C';updateTicks();updateEnv();loadIso();}
@@ -393,14 +402,14 @@ function updateEnv(){
 // ═══════════════════════════════════════
 let loadAbort=null;
 async function loadIso(){
-  const sc=state.scenario,key=getKey(),fn=getFilename(),url=DATA_PATH+getFolder()+fn;
+  const sc=getActiveScenario(),key=getKey(),fn=getFilename(),url=DATA_PATH+getFolder()+fn;
   document.getElementById('badge-temp').textContent=getTemp()+'°C';
   document.getElementById('badge-hum').textContent=getHum()+'%';
   document.getElementById('badge-file').textContent=fn.replace('.geojson','');
   document.getElementById('badge-scenario').textContent=SCENARIOS[sc].label;
   document.getElementById('config-badge').style.display='flex';
   if(state.isoCache[sc][key]){applyIso(state.isoCache[sc][key]);setStatus(`✓ ${fn} (cache)`,'ok');return;}
-  if(availableKeys[sc].size&&!availableKeys[sc].has(key)){setStatus(`⚠️ ${fn} non disponible`,'error');return;}
+  if(availableKeys[sc].size&&!availableKeys[sc].has(key)){setStatus(`⚠️ ${fn} non disponible (${SCENARIOS[sc].label})`,'error');return;}
   if(loadAbort)loadAbort.abort();loadAbort=new AbortController();
   showLoading(fn);setStatus(`Chargement ${fn}...`,'loading');
   try{const r=await fetch(url,{signal:loadAbort.signal});if(!r.ok)throw new Error(`HTTP ${r.status}`);
@@ -541,6 +550,26 @@ document.getElementById('tog-satellite').addEventListener('change',e=>{
 });
 
 // ═══════════════════════════════════════
+//  TOGGLE DEM (avec/sans topographie)
+// ═══════════════════════════════════════
+document.getElementById('tog-dem').addEventListener('change',function(){
+  state.useDem=this.checked;
+  if(state.scenario==='tout')loadIso();
+});
+// Griser le toggle DEM quand on n'est pas sur "tout combiné"
+function updateDemToggleState(){
+  const row=document.getElementById('row-dem');
+  const tog=document.getElementById('tog-dem');
+  if(state.scenario==='tout'){
+    row.style.opacity='1';
+    tog.disabled=false;
+  }else{
+    row.style.opacity='.4';
+    tog.disabled=true;
+  }
+}
+
+// ═══════════════════════════════════════
 //  LAYERS LIST
 // ═══════════════════════════════════════
 function updateLayersList(){
@@ -578,7 +607,7 @@ document.getElementById('db-bar-items').innerHTML=[...PALETTE].reverse().map(p=>
 // ═══════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════
-async function init(){await loadManifest();setupSliders();updateLayersList();if(TEMPERATURES.length&&HUMIDITIES.length)loadIso();}
+async function init(){await loadManifest();setupSliders();updateLayersList();updateDemToggleState();if(TEMPERATURES.length&&HUMIDITIES.length)loadIso();}
 init();
 </script>
 </body>
