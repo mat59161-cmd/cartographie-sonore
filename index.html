@@ -163,7 +163,7 @@
     </div>
     <div class="toggle-row"><span>Afficher les bâtiments</span><label class="toggle"><input type="checkbox" id="tog-buildings"><span class="toggle-slider"></span></label></div>
     <div class="toggle-row"><span>Afficher les routes (trafic)</span><label class="toggle"><input type="checkbox" id="tog-routes"><span class="toggle-slider"></span></label></div>
-    <div class="toggle-row" id="row-dem"><span>Avec topographie (DEM) <span style="font-size:9px;color:var(--muted)">— scénario "Tout"</span></span><label class="toggle"><input type="checkbox" id="tog-dem"><span class="toggle-slider"></span></label></div>
+    <div class="toggle-row" id="row-dem"><span>Avec topographie (DEM) <span style="font-size:9px;color:var(--muted)" id="dem-hint">— scénarios disponibles</span></span><label class="toggle"><input type="checkbox" id="tog-dem"><span class="toggle-slider"></span></label></div>
     <div class="toggle-row"><span>Fond satellite</span><label class="toggle"><input type="checkbox" id="tog-satellite"><span class="toggle-slider"></span></label></div>
     <div class="traffic-legend" id="traffic-legend" style="display:none"><b>🚗 Routes — clic pour détails</b><br>Couleur = intensité du trafic (DJMA)</div>
   </div>
@@ -197,12 +197,18 @@
 // ═══════════════════════════════════════
 const DATA_PATH='./data/';
 const SCENARIOS={
-  vibreur:        {folder:'vibreur/',        label:'Vibreur seul',     desc:'Source ponctuelle vibreur seule (pas de trafic, pas de HX50)'},
-  vibreur_trafic: {folder:'vibreur_trafic/', label:'Vibreur + trafic', desc:'Vibreur + trafic routier (Bd Champlain 2024 + routes locales)'},
-  hx50:           {folder:'hx50/',           label:'HX50 seule',       desc:'Ditch Witch HX50 seule (pas de trafic, pas de vibreur)'},
-  hx50_trafic:    {folder:'hx50_trafic/',    label:'HX50 + trafic',    desc:'HX50 + trafic routier'},
-  tout:           {folder:'tout/',           label:'Tout combiné',     desc:'Vibreur + HX50 + trafic routier — scénario complet'},
-  tout_dem:       {folder:'tout_dem/',       label:'Tout combiné + DEM', desc:'Idem "Tout combiné" mais avec topographie réelle (DEM) prise en compte'},
+  vibreur:           {folder:'vibreur/',           label:'Vibreur seul',     desc:'Source ponctuelle vibreur seule (pas de trafic, pas de HX50)'},
+  vibreur_trafic:    {folder:'vibreur_trafic/',    label:'Vibreur + trafic', desc:'Vibreur + trafic routier (Bd Champlain 2024 + routes locales)'},
+  hx50:              {folder:'hx50/',              label:'HX50 seule',       desc:'Ditch Witch HX50 seule (pas de trafic, pas de vibreur)'},
+  hx50_trafic:       {folder:'hx50_trafic/',       label:'HX50 + trafic',    desc:'HX50 + trafic routier'},
+  hx50_trafic_dem:   {folder:'hx50_trafic_dem/',   label:'HX50 + trafic + DEM', desc:'HX50 + trafic avec topographie (DEM)'},
+  tout:              {folder:'tout/',              label:'Tout combiné',     desc:'Vibreur + HX50 + trafic routier — scénario complet'},
+  tout_dem:          {folder:'tout_dem/',          label:'Tout combiné + DEM', desc:'Idem "Tout combiné" mais avec topographie réelle (DEM) prise en compte'},
+};
+// Scénarios qui ont une variante DEM (le toggle bascule entre les deux)
+const DEM_PAIRS = {
+  hx50_trafic: 'hx50_trafic_dem',
+  tout: 'tout_dem',
 };
 
 // Palette EXACTE du SLD tomio — couleurs identiques pour fill ET stroke
@@ -227,12 +233,12 @@ const LEVEL_LABELS=['< 35','35','40','45','50','55','60','65','70'];
 //  STATE
 // ═══════════════════════════════════════
 let TEMPERATURES=[],HUMIDITIES=[];
-let availableKeys={vibreur:new Set(),vibreur_trafic:new Set(),hx50:new Set(),hx50_trafic:new Set(),tout:new Set(),tout_dem:new Set()};
+let availableKeys={vibreur:new Set(),vibreur_trafic:new Set(),hx50:new Set(),hx50_trafic:new Set(),hx50_trafic_dem:new Set(),tout:new Set(),tout_dem:new Set()};
 const state={
   scenario:'vibreur',tempIndex:0,humIndex:0,period:'DEN',
   opacity:1.0,minLevel:1,useDem:false,
   isoLayer:null,isoGeojson:null,
-  isoCache:{vibreur:{},vibreur_trafic:{},hx50:{},hx50_trafic:{},tout:{},tout_dem:{}},
+  isoCache:{vibreur:{},vibreur_trafic:{},hx50:{},hx50_trafic:{},hx50_trafic_dem:{},tout:{},tout_dem:{}},
   staticLayers:[],routeLayer:null,routeData:null,buildingLayer:null,buildingData:null,
   animating:false,animTimer:null,
 };
@@ -240,9 +246,9 @@ const getTemp=()=>TEMPERATURES[state.tempIndex]??0;
 const getHum=()=>HUMIDITIES[state.humIndex]??0;
 const getKey=()=>`T${getTemp()}_H${getHum()}`;
 // getActiveScenario : retourne le scénario réellement à charger
-// (si "tout" + DEM activé, on bascule sur "tout_dem")
+// (si le scénario actif a une variante DEM et que useDem est activé, on bascule)
 const getActiveScenario=()=>{
-  if(state.scenario==='tout' && state.useDem) return 'tout_dem';
+  if(state.useDem && DEM_PAIRS[state.scenario]) return DEM_PAIRS[state.scenario];
   return state.scenario;
 };
 const getFolder=()=>SCENARIOS[getActiveScenario()].folder;
@@ -554,18 +560,23 @@ document.getElementById('tog-satellite').addEventListener('change',e=>{
 // ═══════════════════════════════════════
 document.getElementById('tog-dem').addEventListener('change',function(){
   state.useDem=this.checked;
-  if(state.scenario==='tout')loadIso();
+  if(DEM_PAIRS[state.scenario])loadIso();
 });
-// Griser le toggle DEM quand on n'est pas sur "tout combiné"
+// Griser le toggle DEM si le scénario actuel n'a pas de variante DEM
 function updateDemToggleState(){
   const row=document.getElementById('row-dem');
   const tog=document.getElementById('tog-dem');
-  if(state.scenario==='tout'){
+  const hint=document.getElementById('dem-hint');
+  if(DEM_PAIRS[state.scenario]){
     row.style.opacity='1';
     tog.disabled=false;
+    hint.textContent=`— disponible pour "${SCENARIOS[state.scenario].label}"`;
   }else{
     row.style.opacity='.4';
     tog.disabled=true;
+    // Liste des scénarios qui supportent DEM
+    const supported=Object.keys(DEM_PAIRS).map(k=>SCENARIOS[k].label).join(', ');
+    hint.textContent=`— ${supported}`;
   }
 }
 
