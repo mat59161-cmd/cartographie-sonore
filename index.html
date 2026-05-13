@@ -197,18 +197,24 @@
 // ═══════════════════════════════════════
 const DATA_PATH='./data/';
 const SCENARIOS={
-  vibreur:           {folder:'vibreur/',           label:'Vibreur seul',     desc:'Source ponctuelle vibreur seule (pas de trafic, pas de HX50)'},
-  vibreur_trafic:    {folder:'vibreur_trafic/',    label:'Vibreur + trafic', desc:'Vibreur + trafic routier (Bd Champlain 2024 + routes locales)'},
-  hx50:              {folder:'hx50/',              label:'HX50 seule',       desc:'Ditch Witch HX50 seule (pas de trafic, pas de vibreur)'},
-  hx50_trafic:       {folder:'hx50_trafic/',       label:'HX50 + trafic',    desc:'HX50 + trafic routier'},
-  hx50_trafic_dem:   {folder:'hx50_trafic_dem/',   label:'HX50 + trafic + DEM', desc:'HX50 + trafic avec topographie (DEM)'},
-  tout:              {folder:'tout/',              label:'Tout combiné',     desc:'Vibreur + HX50 + trafic routier — scénario complet'},
-  tout_dem:          {folder:'tout_dem/',          label:'Tout combiné + DEM', desc:'Idem "Tout combiné" mais avec topographie réelle (DEM) prise en compte'},
+  vibreur:             {folder:'vibreur/',             label:'Vibreur seul',          desc:'Source ponctuelle vibreur seule (pas de trafic, pas de HX50)'},
+  vibreur_dem:         {folder:'vibreur_dem/',         label:'Vibreur seul + DEM',    desc:'Vibreur seul avec topographie (DEM)'},
+  vibreur_trafic:      {folder:'vibreur_trafic/',      label:'Vibreur + trafic',      desc:'Vibreur + trafic routier (Bd Champlain 2024 + routes locales)'},
+  vibreur_trafic_dem:  {folder:'vibreur_trafic_dem/',  label:'Vibreur + trafic + DEM',desc:'Vibreur + trafic avec topographie (DEM)'},
+  hx50:                {folder:'hx50/',                label:'HX50 seule',            desc:'Ditch Witch HX50 seule (pas de trafic, pas de vibreur)'},
+  hx50_dem:            {folder:'hx50_dem/',            label:'HX50 seule + DEM',      desc:'HX50 seule avec topographie (DEM)'},
+  hx50_trafic:         {folder:'hx50_trafic/',         label:'HX50 + trafic',         desc:'HX50 + trafic routier'},
+  hx50_trafic_dem:     {folder:'hx50_trafic_dem/',     label:'HX50 + trafic + DEM',   desc:'HX50 + trafic avec topographie (DEM)'},
+  tout:                {folder:'tout/',                label:'Tout combiné',          desc:'Vibreur + HX50 + trafic routier — scénario complet'},
+  tout_dem:            {folder:'tout_dem/',            label:'Tout combiné + DEM',    desc:'Idem "Tout combiné" mais avec topographie réelle (DEM) prise en compte'},
 };
 // Scénarios qui ont une variante DEM (le toggle bascule entre les deux)
 const DEM_PAIRS = {
-  hx50_trafic: 'hx50_trafic_dem',
-  tout: 'tout_dem',
+  vibreur:        'vibreur_dem',
+  vibreur_trafic: 'vibreur_trafic_dem',
+  hx50:           'hx50_dem',
+  hx50_trafic:    'hx50_trafic_dem',
+  tout:           'tout_dem',
 };
 
 // Palette EXACTE du SLD tomio — couleurs identiques pour fill ET stroke
@@ -233,12 +239,24 @@ const LEVEL_LABELS=['< 35','35','40','45','50','55','60','65','70'];
 //  STATE
 // ═══════════════════════════════════════
 let TEMPERATURES=[],HUMIDITIES=[];
-let availableKeys={vibreur:new Set(),vibreur_trafic:new Set(),hx50:new Set(),hx50_trafic:new Set(),hx50_trafic_dem:new Set(),tout:new Set(),tout_dem:new Set()};
+let availableKeys={
+  vibreur:new Set(),vibreur_dem:new Set(),
+  vibreur_trafic:new Set(),vibreur_trafic_dem:new Set(),
+  hx50:new Set(),hx50_dem:new Set(),
+  hx50_trafic:new Set(),hx50_trafic_dem:new Set(),
+  tout:new Set(),tout_dem:new Set()
+};
 const state={
   scenario:'vibreur',tempIndex:0,humIndex:0,period:'DEN',
   opacity:1.0,minLevel:1,useDem:false,
   isoLayer:null,isoGeojson:null,
-  isoCache:{vibreur:{},vibreur_trafic:{},hx50:{},hx50_trafic:{},hx50_trafic_dem:{},tout:{},tout_dem:{}},
+  isoCache:{
+    vibreur:{},vibreur_dem:{},
+    vibreur_trafic:{},vibreur_trafic_dem:{},
+    hx50:{},hx50_dem:{},
+    hx50_trafic:{},hx50_trafic_dem:{},
+    tout:{},tout_dem:{}
+  },
   staticLayers:[],routeLayer:null,routeData:null,buildingLayer:null,buildingData:null,
   animating:false,animTimer:null,
 };
@@ -334,7 +352,7 @@ async function loadManifest(){
       if(m[sk])m[sk].forEach(f=>{const mt=f.match(/T(-?\d+)_H(\d+)/);if(mt)availableKeys[sk].add(`T${mt[1]}_H${mt[2]}`);});
     }
     const total=Object.values(availableKeys).reduce((s,v)=>s+v.size,0);
-    setStatus(`✓ Manifest : ${total} cartes sur 5 scénarios`,'ok');return;
+    setStatus(`✓ Manifest : ${total} cartes sur ${Object.keys(SCENARIOS).length} scénarios`,'ok');return;
   }}catch(e){}
   setStatus('Détection des fichiers...','loading');
   const tTest=[-20,-15,-10,-5,0,5,10,15,20,25,30,35,40],hTest=[10,20,30,40,50,60,70,80,90,95,100];
@@ -345,7 +363,7 @@ async function loadManifest(){
   TEMPERATURES=[...ts].sort((a,b)=>a-b);HUMIDITIES=[...hs].sort((a,b)=>a-b);
   const total=Object.values(availableKeys).reduce((s,v)=>s+v.size,0);
   if(!TEMPERATURES.length)setStatus('⚠️ Aucun fichier trouvé','error');
-  else setStatus(`✓ ${total} cartes détectées sur 5 scénarios`,'ok');
+  else setStatus(`✓ ${total} cartes détectées sur ${Object.keys(SCENARIOS).length} scénarios`,'ok');
 }
 
 // ═══════════════════════════════════════

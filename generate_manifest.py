@@ -20,7 +20,13 @@ import json, re, os
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 
-SCENARIOS = ['vibreur', 'vibreur_trafic', 'hx50', 'hx50_trafic', 'hx50_trafic_dem', 'tout', 'tout_dem']
+SCENARIOS = [
+    'vibreur', 'vibreur_dem',
+    'vibreur_trafic', 'vibreur_trafic_dem',
+    'hx50', 'hx50_dem',
+    'hx50_trafic', 'hx50_trafic_dem',
+    'tout', 'tout_dem'
+]
 
 def scan_folder(folder):
     path = os.path.join(DATA_DIR, folder)
