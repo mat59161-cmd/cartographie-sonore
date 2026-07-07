@@ -313,5 +313,11 @@
     "iso_T5_H60.geojson",
     "iso_T5_H80.geojson",
     "iso_T5_H95.geojson"
-  ]
+  ],
+  "facades": {
+    "tout": [
+      "building_selection.geojson",
+      "facade_noise.geojson"
+    ]
+  }
 }
