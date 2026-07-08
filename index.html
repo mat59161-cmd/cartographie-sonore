@@ -828,12 +828,37 @@ async function loadFacadeData(){
 }
 
 // ---------- DEM / relief ----------
-const DEM={pts:null,idx:null,cell:0,ex:null,z0:null,available:false,tried:false,defaulted:false,src:''};
+// Deux formats : (1) heightmap dem.json + dem.png (recommandé, généré par
+// dem_to_png.py — altitudes 16 bits sur canaux R+G, lecture bilinéaire) ;
+// (2) repli : dem.geojson de points 3D (IDW + index spatial).
+const DEM={pts:null,idx:null,cell:0,ex:null,grid:null,z0:null,available:false,tried:false,defaulted:false,src:''};
+function loadImage(url){return new Promise(res=>{const im=new Image();im.onload=function(){res(im);};im.onerror=function(){res(null);};im.src=url;});}
 async function loadDem(){
   if(DEM.tried)return DEM.available;
   DEM.tried=true;
-  const urls=facadeDirs().map(d=>DATA_PATH+d+'dem.geojson');
-  urls.push(DATA_PATH+'dem.geojson');
+  const dirs=facadeDirs().map(d=>DATA_PATH+d);dirs.push(DATA_PATH);
+  // 1) heightmap PNG legere
+  for(const d of dirs){
+    try{
+      const r=await fetch(d+'dem.json');if(!r.ok)continue;
+      const meta=await r.json();
+      if(!meta||meta.format!=='heightmap-rg16')continue;
+      if(meta.mode==='local'&&F.mode!=='local')continue;
+      const im=await loadImage(d+(meta.file||'dem.png'));
+      if(!im)continue;
+      const cv=document.createElement('canvas');cv.width=im.width;cv.height=im.height;
+      const c2=cv.getContext('2d');c2.drawImage(im,0,0);
+      const px=c2.getImageData(0,0,im.width,im.height).data;
+      const n=im.width*im.height;const data=new Float32Array(n);
+      const dz2=(meta.zmax-meta.zmin)/65535;
+      for(let i2=0;i2<n;i2++)data[i2]=meta.zmin+(px[i2*4]*256+px[i2*4+1])*dz2;
+      DEM.grid={data:data,nx:im.width,ny:im.height,x0:meta.x0,y0:meta.y0,x1:meta.x1,y1:meta.y1};
+      DEM.available=true;DEM.src=d+'dem.json';
+      return true;
+    }catch(e){}
+  }
+  // 2) repli : points 3D GeoJSON
+  const urls=dirs.map(d=>d+'dem.geojson');
   const r=await fetchFirst(urls);
   if(!r)return false;
   const mode=crsMode(r.gj);
@@ -844,7 +869,7 @@ async function loadDem(){
     const eat=c=>{if(!c||c.length<2)return;
       const z=(c.length>2&&Number.isFinite(c[2]))?c[2]:zProp;
       if(z===null||z===undefined)return;
-      const m=toFrame(c,mode);pts.push({x:m[0],y:m[1],z:z});};
+      const m2=toFrame(c,mode);pts.push({x:m2[0],y:m2[1],z:z});};
     if(/^Point$/i.test(g.type))eat(g.coordinates);
     else if(/^MultiPoint$/i.test(g.type))g.coordinates.forEach(eat);
     else if(/^LineString$/i.test(g.type))g.coordinates.forEach(eat);
@@ -864,7 +889,20 @@ function demIndexFor(ext){
     const k=kx+'_'+ky;let a=idx.get(k);if(!a){a=[];idx.set(k,a);}a.push(p);});
   DEM.idx=idx;DEM.cell=cell;DEM.ex=ext;
 }
+function demZGrid(fx,fy){
+  const G=DEM.grid;
+  let gx=(fx-G.x0)/(G.x1-G.x0)*G.nx-0.5;
+  let gy=(G.y1-fy)/(G.y1-G.y0)*G.ny-0.5;
+  gx=clamp(gx,0,G.nx-1);gy=clamp(gy,0,G.ny-1);
+  const i0=Math.floor(gx),j0=Math.floor(gy);
+  const i1=Math.min(G.nx-1,i0+1),j1=Math.min(G.ny-1,j0+1);
+  const tx=gx-i0,ty=gy-j0;
+  const z00=G.data[j0*G.nx+i0],z10=G.data[j0*G.nx+i1];
+  const z01=G.data[j1*G.nx+i0],z11=G.data[j1*G.nx+i1];
+  return (z00*(1-tx)+z10*tx)*(1-ty)+(z01*(1-tx)+z11*tx)*ty;
+}
 function demZ(fx,fy){
+  if(DEM.grid)return demZGrid(fx,fy);
   if(!DEM.idx)return DEM.z0!==null?DEM.z0:0;
   const cell=DEM.cell,ex=DEM.ex;
   const kx=Math.floor((fx-ex.mx0)/cell),ky=Math.floor((fy-ex.my0)/cell);
@@ -1158,7 +1196,7 @@ function rebuild(){
   disposeGroup(T.world);T.walls=[];T.recvMesh=null;T.recvMeta=[];
   const local=(F.mode==='local');
   F.terrainOn=!local&&DEM.available&&$('f3d-tg-dem').checked;
-  if(F.terrainOn){DEM.z0=null;const ext=groundExtent();demIndexFor(ext);DEM.z0=demZ(F.center.x,F.center.y);}
+  if(F.terrainOn){DEM.z0=null;if(!DEM.grid){const ext=groundExtent();demIndexFor(ext);}DEM.z0=demZ(F.center.x,F.center.y);}
   baseByPk=new Map();
   F.sel.forEach(b=>{const r=b.rings[0];let sx=0,sy=0;r.forEach(p=>{sx+=p[0];sy+=p[1];});
     b._base=baseAt(sx/r.length,sy/r.length);
@@ -1451,7 +1489,7 @@ $('tog-facades').addEventListener('change',async function(){
 });
 async function refreshIfOn(){
   if(!$('tog-facades').checked)return;
-  DEM.tried=false;DEM.available=false;DEM.pts=null;DEM.idx=null;DEM.z0=null;
+  DEM.tried=false;DEM.available=false;DEM.pts=null;DEM.idx=null;DEM.grid=null;DEM.z0=null;
   const ok=await loadFacadeData();
   if(ok){showMapLayer(false);
     setStatus('✓ Façades rechargées ('+(F.srcRecv||F.srcSel).split('/').slice(-2).join('/')+')','ok');}
