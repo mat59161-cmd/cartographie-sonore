@@ -57,7 +57,7 @@ FACADES_DIR = os.path.join(DATA_DIR, 'facades')
 def scan_facades(path):
     return sorted(f for f in os.listdir(path)
                   if f.endswith('.geojson')
-                  and (f.startswith('facade_noise') or f == 'building_selection.geojson'))
+                  and (f.startswith('facade_noise') or f in ('building_selection.geojson', 'dem.geojson')))
 
 manifest['facades'] = {}
 if os.path.isdir(FACADES_DIR):
@@ -88,6 +88,8 @@ if manifest['facades']:
         print(f'     ✓ {k:<18} : {len(files)} fichier(s)')
 else:
     print('  · facades/              : rien (optionnel — vue 3D des façades)')
+if os.path.exists(os.path.join(DATA_DIR, 'dem.geojson')):
+    print('  ✓ dem.geojson trouvé (relief 3D)')
 if os.path.exists(os.path.join(DATA_DIR, 'BUILDINGS.geojson')):
     print('  ✓ BUILDINGS.geojson trouvé')
 if os.path.exists(os.path.join(DATA_DIR, 'road_traffic_final_3857.geojson')):

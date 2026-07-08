@@ -246,6 +246,8 @@
         <div class="toggle-row"><span>Récepteurs (points)</span><label class="toggle"><input type="checkbox" id="f3d-tg-recv" checked><span class="toggle-slider"></span></label></div>
         <div class="toggle-row"><span>Bâtiments voisins</span><label class="toggle"><input type="checkbox" id="f3d-tg-ctx" checked><span class="toggle-slider"></span></label></div>
         <div class="toggle-row"><span>Routes</span><label class="toggle"><input type="checkbox" id="f3d-tg-roads" checked><span class="toggle-slider"></span></label></div>
+        <div class="toggle-row"><span>Relief (DEM)</span><label class="toggle"><input type="checkbox" id="f3d-tg-dem"><span class="toggle-slider"></span></label></div>
+        <div class="toggle-row"><span>Carte de bruit au sol</span><label class="toggle"><input type="checkbox" id="f3d-tg-iso" checked><span class="toggle-slider"></span></label></div>
         <div class="toggle-row"><span>Fond de carte au sol</span><label class="toggle"><input type="checkbox" id="f3d-tg-map" checked><span class="toggle-slider"></span></label></div>
         <div class="toggle-row"><span>Fond satellite</span><label class="toggle"><input type="checkbox" id="f3d-tg-sat"><span class="toggle-slider"></span></label></div>
         <button class="f3d-btn" id="f3d-shot" style="width:100%;margin-top:4px">📷 Exporter PNG</button>
@@ -723,8 +725,11 @@ init();
 //  FAÇADES 3D — module intégré (three.js r128)
 //  Données : data/facades/<scenario>/facade_noise[_Txx_Hyy].geojson
 //            + building_selection.geojson  (sorties de facade_3d_v6.groovy)
-//  CRS auto-détecté : 3857 / WGS84 (géoréférencé) ou métrique local.
+//            + dem.geojson (optionnel : relief — points 3D, aussi accepté
+//              à la racine data/). CRS auto : 3857 / WGS84 / métrique local.
 //  Correction cos(lat) appliquée au 3857 pour des mètres vrais en 3D.
+//  Sol : tuiles (CartoDB/Esri) + isosurfaces 2D composées en texture,
+//  drapées sur le relief quand le DEM est actif.
 // ═══════════════════════════════════════════════════════════════
 const EXT=20037508.342789244;
 const $=id=>document.getElementById(id);
@@ -736,7 +741,7 @@ function closeRing(r){const o=r.slice();if(o.length<2)return o;const a=o[0],b=o[
 const EXCLUDE=new Set(['PK','IDRECEIVER','ID','GID','FID','BUILD_PK','BUILDPK','HEIGHT','HAUTEUR','PERIOD','PERIODE','POP','IDSOURCE','RCV','THE_GEOM','ID_BUILD','ID_SOURCE','ZINDEX','NB_LEV']);
 const PREF_FIELD=['LAEQ','LEQ','LDEN','LDAY','LN','LNIGHT'];
 
-// Couleurs : MÊME palette que la 2D (PALETTE globale, classes de 5 dB)
+// Couleurs façades : MÊME palette que la 2D (PALETTE globale, classes de 5 dB)
 function lvlClass(v){if(v===null||v===undefined||!Number.isFinite(v))return null;if(v<35)return 0;if(v>=80)return 10;return 1+Math.floor((v-35)/5);}
 function colorHex(v){const c=lvlClass(v);return c===null?'#39424f':PALETTE[c].color;}
 
@@ -744,7 +749,8 @@ function colorHex(v){const c=lvlClass(v);return c===null?'#39424f':PALETTE[c].co
 const F={sel:[],recv:[],mode:null,center:null,k:1,diag:120,
   periods:[],period:null,fields:[],field:null,
   open:false,targetI:0,srcSel:'',srcRecv:'',layer:null,manifest:null,
-  lastTileKey:'',T:null};
+  terrainOn:false,T:null};
+let baseByPk=new Map();
 
 // ---------- CRS ----------
 function crsMode(gj){
@@ -766,7 +772,7 @@ function parseBuildings(gj){const mode=crsMode(gj);const out=[];let i=0;
     const h=Math.max(1,num(propGet(p,['HEIGHT','HEIGHT_WALL','HAUTEUR','H']))??10);
     const pk=num(propGet(p,['PK','ID_BUILD','ID','GID','FID']));
     const polys=g.type==='Polygon'?[g.coordinates]:(g.type==='MultiPolygon'?g.coordinates:[]);
-    polys.forEach(rings=>{out.push({pk:pk,h:h,_i:i++,rings:rings.map(r=>r.map(c=>toFrame(c,mode)))});});
+    polys.forEach(rings=>{out.push({pk:pk,h:h,_i:i++,_base:0,rings:rings.map(r=>r.map(c=>toFrame(c,mode)))});});
   });
   return{mode:mode,list:out};
 }
@@ -821,6 +827,67 @@ async function loadFacadeData(){
   return true;
 }
 
+// ---------- DEM / relief ----------
+const DEM={pts:null,idx:null,cell:0,ex:null,z0:null,available:false,tried:false,defaulted:false,src:''};
+async function loadDem(){
+  if(DEM.tried)return DEM.available;
+  DEM.tried=true;
+  const urls=facadeDirs().map(d=>DATA_PATH+d+'dem.geojson');
+  urls.push(DATA_PATH+'dem.geojson');
+  const r=await fetchFirst(urls);
+  if(!r)return false;
+  const mode=crsMode(r.gj);
+  if(mode==='local'&&F.mode!=='local')return false;
+  let pts=[];
+  (r.gj.features||[]).forEach(f=>{const g=f.geometry;if(!g)return;const p=f.properties||{};
+    const zProp=num(propGet(p,['Z','ALT','ALTITUDE','ELEV','ELEVATION','HEIGHT']));
+    const eat=c=>{if(!c||c.length<2)return;
+      const z=(c.length>2&&Number.isFinite(c[2]))?c[2]:zProp;
+      if(z===null||z===undefined)return;
+      const m=toFrame(c,mode);pts.push({x:m[0],y:m[1],z:z});};
+    if(/^Point$/i.test(g.type))eat(g.coordinates);
+    else if(/^MultiPoint$/i.test(g.type))g.coordinates.forEach(eat);
+    else if(/^LineString$/i.test(g.type))g.coordinates.forEach(eat);
+    else if(/^MultiLineString$/i.test(g.type))g.coordinates.forEach(l=>l.forEach(eat));
+  });
+  if(pts.length<3)return false;
+  if(pts.length>40000){const step=Math.ceil(pts.length/40000);pts=pts.filter((_,i)=>i%step===0);}
+  DEM.pts=pts;DEM.available=true;DEM.src=r.url;
+  return true;
+}
+function demIndexFor(ext){
+  const cell=Math.max(10,(ext.mx1-ext.mx0)/40);
+  const idx=new Map();
+  DEM.pts.forEach(p=>{
+    if(p.x<ext.mx0-cell||p.x>ext.mx1+cell||p.y<ext.my0-cell||p.y>ext.my1+cell)return;
+    const kx=Math.floor((p.x-ext.mx0)/cell),ky=Math.floor((p.y-ext.my0)/cell);
+    const k=kx+'_'+ky;let a=idx.get(k);if(!a){a=[];idx.set(k,a);}a.push(p);});
+  DEM.idx=idx;DEM.cell=cell;DEM.ex=ext;
+}
+function demZ(fx,fy){
+  if(!DEM.idx)return DEM.z0!==null?DEM.z0:0;
+  const cell=DEM.cell,ex=DEM.ex;
+  const kx=Math.floor((fx-ex.mx0)/cell),ky=Math.floor((fy-ex.my0)/cell);
+  let ring=0,cand=[];
+  while(cand.length<6&&ring<7){
+    cand=[];
+    for(let i=kx-ring;i<=kx+ring;i++)for(let j=ky-ring;j<=ky+ring;j++){
+      const a=DEM.idx.get(i+'_'+j);if(a)cand=cand.concat(a);}
+    ring++;
+  }
+  if(!cand.length)return DEM.z0!==null?DEM.z0:0;
+  const K=6,bd=[],bv=[];
+  for(let i=0;i<cand.length;i++){const p=cand[i];
+    const dx=p.x-fx,dy=p.y-fy;const d2=dx*dx+dy*dy;
+    if(bd.length<K||d2<bd[bd.length-1]){let j=bd.length;bd.push(0);bv.push(0);
+      while(j>0&&bd[j-1]>d2){bd[j]=bd[j-1];bv[j]=bv[j-1];j--;}
+      bd[j]=d2;bv[j]=p.z;if(bd.length>K){bd.pop();bv.pop();}}}
+  if(bd[0]<1e-4)return bv[0];
+  let sw=0,sv=0;for(let i=0;i<bd.length;i++){const w=1/bd[i];sw+=w;sv+=w*bv[i];}
+  return sv/sw;
+}
+function baseAt(fx,fy){return F.terrainOn?(demZ(fx,fy)-DEM.z0):0;}
+
 // ---------- Couche 2D : bâtiments étudiés surlignés ----------
 function selToWgs(){
   return{type:'FeatureCollection',features:F.sel.map(b=>({type:'Feature',
@@ -831,7 +898,7 @@ function removeMapLayer(){if(F.layer){map.removeLayer(F.layer);F.layer=null;}}
 function showMapLayer(fly){
   removeMapLayer();
   if(F.mode==='local'){
-    $('f3d-hint').innerHTML='⚠️ CRS des façades non géoréférencé (ni 3857 ni WGS84) : impossible de les surligner sur la carte. <button class="f3d-btn" style="margin-top:6px" onclick="F3D.open(0)">Ouvrir la 3D quand même</button><br>Sans voisins ni fond de carte — conseil : exporte en 3857 comme le reste du pipeline.';
+    $('f3d-hint').innerHTML='⚠️ CRS des façades non géoréférencé (ni 3857 ni WGS84) : impossible de les surligner sur la carte. <button class="f3d-btn" style="margin-top:6px" onclick="F3D.open(0)">Ouvrir la 3D quand même</button><br>Sans voisins, relief ni fond de carte — conseil : exporte en 3857 comme le reste du pipeline.';
     return;
   }
   F.layer=L.geoJSON(selToWgs(),{
@@ -899,7 +966,7 @@ function initThree(){
   const world=new THREE.Group();scene.add(world);
   const controls=makeControls(camera,renderer.domElement);
   F.T={renderer:renderer,scene:scene,camera:camera,world:world,controls:controls,
-       ground:ground,grid:grid,walls:[],recvMesh:null,recvMeta:[],tileMesh:null};
+       ground:ground,grid:grid,walls:[],recvMesh:null,recvMeta:[],groundMesh:null};
   bindPicking(renderer.domElement);
   window.addEventListener('resize',resize3d);
 }
@@ -917,8 +984,21 @@ function setFrame(b){
     if(a<x0)x0=a;if(a>x1)x1=a;if(c<y0)y0=c;if(c>y1)y1=c;}));
   F.diag=Math.max(60,Math.hypot(x1-x0,y1-y0));
 }
+function groundExtent(){
+  const half=Math.max(240,F.diag*1.8)/F.k;
+  const x0=F.center.x-half,x1=F.center.x+half,y0=F.center.y-half,y1=F.center.y+half;
+  const t2x=(mx,zz)=>(mx+EXT)/(2*EXT)*Math.pow(2,zz);
+  const t2y=(my,zz)=>(EXT-my)/(2*EXT)*Math.pow(2,zz);
+  let z=clamp(Math.round(Math.log2(40075016.686/(2*half/4))),13,19);
+  let tx0,tx1,ty0,ty1;
+  for(;;){tx0=Math.floor(t2x(x0,z));tx1=Math.floor(t2x(x1,z));ty0=Math.floor(t2y(y1,z));ty1=Math.floor(t2y(y0,z));
+    if((tx1-tx0+1)*(ty1-ty0+1)<=36||z<=12)break;z--;}
+  const s=2*EXT/Math.pow(2,z);
+  return{z:z,tx0:tx0,tx1:tx1,ty0:ty0,ty1:ty1,
+    mx0:tx0*s-EXT,mx1:(tx1+1)*s-EXT,my1:EXT-ty0*s,my0:EXT-(ty1+1)*s};
+}
 
-// ---------- Interpolation IDW 3D (lissage visuel entre récepteurs) ----------
+// ---------- Interpolation IDW 3D des façades (lissage visuel) ----------
 function makeIDW(pts){
   if(!pts.length)return null;const K=8;
   return function(x,y,z){
@@ -948,7 +1028,7 @@ function getInterpB(b){
   const f=makeIDW(pts);interpCache.set(key,f);return f;
 }
 
-// ---------- Constructions 3D ----------
+// ---------- Constructions 3D (avec altitude de base) ----------
 function disposeGroup(g){
   g.traverse(o=>{if(o.geometry)o.geometry.dispose();
     if(o.material){(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{
@@ -956,11 +1036,11 @@ function disposeGroup(g){
       if(!shared&&m.dispose)m.dispose();});}});
   while(g.children.length)g.remove(g.children[0]);
 }
-function addOutline(g,rings,h){
+function addOutline(g,rings,base,h){
   const p=[];rings.forEach(rg=>{const r=closeRing(rg);
     for(let i=0;i<r.length-1;i++){const a=r[i],b=r[i+1];
       const ax=lx(a[0]),az=lzW(a[1]),bx=lx(b[0]),bz=lzW(b[1]);
-      p.push(ax,0,az,bx,0,bz, ax,h,az,bx,h,bz, ax,0,az,ax,h,az);}});
+      p.push(ax,base,az,bx,base,bz, ax,base+h,az,bx,base+h,bz, ax,base,az,ax,base+h,az);}});
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.Float32BufferAttribute(p,3));
   g.add(new THREE.LineSegments(geo,MAT.line));
@@ -969,35 +1049,39 @@ function addRoof(g,b,mat){
   try{
     const s=new THREE.Shape(closeRing(b.rings[0]).map(p=>new THREE.Vector2(lx(p[0]),lyG(p[1]))));
     for(let i=1;i<b.rings.length;i++)s.holes.push(new THREE.Path(closeRing(b.rings[i]).map(p=>new THREE.Vector2(lx(p[0]),lyG(p[1])))));
-    const rg=new THREE.ShapeGeometry(s);rg.rotateX(-Math.PI/2);rg.translate(0,b.h,0);
+    const rg=new THREE.ShapeGeometry(s);rg.rotateX(-Math.PI/2);rg.translate(0,b._base+b.h,0);
     g.add(new THREE.Mesh(rg,mat));
   }catch(e){}
 }
 function addCtx(g,b){
+  const sk=F.terrainOn?2:0;
   const pos=[],idx=[];let vi=0;
   b.rings.forEach(rg=>{const r=closeRing(rg);
     for(let i=0;i<r.length-1;i++){const a=r[i],c=r[i+1];
-      pos.push(lx(a[0]),0,lzW(a[1]), lx(c[0]),0,lzW(c[1]), lx(c[0]),b.h,lzW(c[1]), lx(a[0]),b.h,lzW(a[1]));
+      pos.push(lx(a[0]),b._base-sk,lzW(a[1]), lx(c[0]),b._base-sk,lzW(c[1]),
+               lx(c[0]),b._base+b.h,lzW(c[1]), lx(a[0]),b._base+b.h,lzW(a[1]));
       idx.push(vi,vi+1,vi+2, vi,vi+2,vi+3);vi+=4;}});
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
   geo.setIndex(idx);geo.computeVertexNormals();
   g.add(new THREE.Mesh(geo,MAT.ctxWall));
-  addRoof(g,b,MAT.ctxRoof);addOutline(g,b.rings,b.h);
+  addRoof(g,b,MAT.ctxRoof);addOutline(g,b.rings,b._base,b.h);
 }
 function addSel(g,b){
   const interp=getInterpB(b);
+  const sk=F.terrainOn?2:0;
   const stepS=F.recv.length>4000?3.0:1.6,stepZ=1.2;
   const pos=[],col=[],idx=[];let vi=0;const C=new THREE.Color();
   b.rings.forEach(rg=>{const r=closeRing(rg);
     for(let i=0;i<r.length-1;i++){const A=r[i],B=r[i+1];
       const ax=lx(A[0]),ay=lyG(A[1]),bx=lx(B[0]),by=lyG(B[1]);
       const L=Math.hypot(bx-ax,by-ay);if(L<0.02)continue;
-      const nS=clamp(Math.round(L/stepS),1,90),nZ=clamp(Math.round(b.h/stepZ),2,48);
+      const nS=clamp(Math.round(L/stepS),1,90),nZ=clamp(Math.round((b.h+sk)/stepZ),2,52);
       for(let a2=0;a2<=nS;a2++){const t=a2/nS;const gx=ax+(bx-ax)*t,gy=ay+(by-ay)*t;
-        for(let k2=0;k2<=nZ;k2++){const z=b.h*k2/nZ;
-          pos.push(gx,z,-gy);
-          C.set(colorHex(interp?interp(gx,gy,z):null));
+        for(let k2=0;k2<=nZ;k2++){const y=b._base-sk+(b.h+sk)*k2/nZ;
+          const zRel=Math.max(0,y-b._base);
+          pos.push(gx,y,-gy);
+          C.set(colorHex(interp?interp(gx,gy,zRel):null));
           col.push(C.r,C.g,C.b);}}
       for(let a2=0;a2<nS;a2++)for(let k2=0;k2<nZ;k2++){
         const c0=vi+a2*(nZ+1)+k2,c1=vi+(a2+1)*(nZ+1)+k2;
@@ -1010,7 +1094,7 @@ function addSel(g,b){
   const m=new THREE.Mesh(geo,MAT.selWall);
   m.userData={_i:b._i,h:b.h,isWall:true};
   g.add(m);F.T.walls.push(m);
-  addRoof(g,b,MAT.selRoof);addOutline(g,b.rings,b.h);
+  addRoof(g,b,MAT.selRoof);addOutline(g,b.rings,b._base,b.h);
 }
 function ctxBuildings(){
   const out=[];if(!state.buildingData)return out;
@@ -1026,17 +1110,18 @@ function ctxBuildings(){
       const cx2=sx/r0.length,cy2=sy/r0.length;
       if(Math.hypot(lx(cx2),lyG(cy2))>R)return;
       for(let s2=0;s2<selC.length;s2++){if(Math.hypot(cx2-selC[s2][0],cy2-selC[s2][1])*F.k<1.5)return;}
-      out.push({pk:null,h:h,_i:i++,rings:fr});});
+      out.push({pk:null,h:h,_i:i++,_base:0,_cx:cx2,_cy:cy2,rings:fr});});
   });
   return out;
 }
 function addStrip(g,p1,p2,w){
-  const x1=lx(p1[0]),y1=lyG(p1[1]),x2=lx(p2[0]),y2=lyG(p2[1]);
-  const dx=x2-x1,dy=y2-y1,L=Math.hypot(dx,dy);if(L<0.1)return;
+  const x1=lx(p1[0]),g1=lyG(p1[1]),x2=lx(p2[0]),g2=lyG(p2[1]);
+  const dx=x2-x1,dy=g2-g1,L=Math.hypot(dx,dy);if(L<0.1)return;
+  const e1=baseAt(p1[0],p1[1])+0.15,e2=baseAt(p2[0],p2[1])+0.15;
   const nx=-dy/L*w/2,ny=dx/L*w/2;
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.Float32BufferAttribute([
-    x1+nx,0.04,-(y1+ny), x2+nx,0.04,-(y2+ny), x2-nx,0.04,-(y2-ny), x1-nx,0.04,-(y1-ny)],3));
+    x1+nx,e1,-(g1+ny), x2+nx,e2,-(g2+ny), x2-nx,e2,-(g2-ny), x1-nx,e1,-(g1-ny)],3));
   geo.setIndex([0,1,2,0,2,3]);geo.computeVertexNormals();
   g.add(new THREE.Mesh(geo,MAT.road));
 }
@@ -1059,65 +1144,127 @@ function addRecv(g){
   const geo=new THREE.SphereGeometry(rad,10,8);
   const mesh=new THREE.InstancedMesh(geo,new THREE.MeshBasicMaterial({}),rows.length);
   const M=new THREE.Matrix4(),C=new THREE.Color();
-  rows.forEach((r,i)=>{M.makeTranslation(lx(r.x),r.h,lzW(r.y));mesh.setMatrixAt(i,M);
+  rows.forEach((r,i)=>{
+    const base=(r.buildPk!==null&&r.buildPk!==undefined&&baseByPk.has(r.buildPk))?baseByPk.get(r.buildPk):baseAt(r.x,r.y);
+    M.makeTranslation(lx(r.x),base+r.h,lzW(r.y));mesh.setMatrixAt(i,M);
     C.set(colorHex(getVal(r)));mesh.setColorAt(i,C);});
   if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
   mesh.visible=$('f3d-tg-recv').checked;
   g.add(mesh);F.T.recvMesh=mesh;
 }
 function rebuild(){
-  const T=F.T;interpCache.clear();
+  const T=F.T;if(!T)return;
+  interpCache.clear();
   disposeGroup(T.world);T.walls=[];T.recvMesh=null;T.recvMeta=[];
+  const local=(F.mode==='local');
+  F.terrainOn=!local&&DEM.available&&$('f3d-tg-dem').checked;
+  if(F.terrainOn){DEM.z0=null;const ext=groundExtent();demIndexFor(ext);DEM.z0=demZ(F.center.x,F.center.y);}
+  baseByPk=new Map();
+  F.sel.forEach(b=>{const r=b.rings[0];let sx=0,sy=0;r.forEach(p=>{sx+=p[0];sy+=p[1];});
+    b._base=baseAt(sx/r.length,sy/r.length);
+    if(b.pk!==null&&b.pk!==undefined)baseByPk.set(b.pk,b._base);});
   F.sel.forEach(b=>addSel(T.world,b));
-  if(F.mode!=='local'&&$('f3d-tg-ctx').checked)ctxBuildings().forEach(b=>addCtx(T.world,b));
-  if(F.mode!=='local'&&$('f3d-tg-roads').checked)addRoadsAll(T.world);
+  if(!local&&$('f3d-tg-ctx').checked)ctxBuildings().forEach(b=>{b._base=baseAt(b._cx,b._cy);addCtx(T.world,b);});
+  if(!local&&$('f3d-tg-roads').checked)addRoadsAll(T.world);
   addRecv(T.world);
-  updateTiles();fillLegend();fillStats();
+  updateGround();fillLegend();fillStats();
 }
 
-// ---------- Fond de carte drapé au sol (tuiles 3857) ----------
-let tileToken=0;
-async function updateTiles(){
-  const T=F.T;
-  const on=$('f3d-tg-map').checked&&F.mode!=='local';
-  const sat=$('f3d-tg-sat').checked;
-  const key=on?F.center.x.toFixed(0)+'|'+F.center.y.toFixed(0)+'|'+(sat?'s':'d'):'off';
-  T.ground.visible=!on;T.grid.visible=!on;
-  if(key===F.lastTileKey)return;
-  F.lastTileKey=key;
-  if(T.tileMesh){T.scene.remove(T.tileMesh);T.tileMesh.geometry.dispose();
-    if(T.tileMesh.material.map)T.tileMesh.material.map.dispose();T.tileMesh.material.dispose();T.tileMesh=null;}
-  if(!on)return;
-  const tok=++tileToken;
-  const half=Math.max(240,F.diag*1.8)/F.k;
-  const x0=F.center.x-half,x1=F.center.x+half,y0=F.center.y-half,y1=F.center.y+half;
-  const t2x=(mx,z2)=>(mx+EXT)/(2*EXT)*Math.pow(2,z2);
-  const t2y=(my,z2)=>(EXT-my)/(2*EXT)*Math.pow(2,z2);
-  let z=clamp(Math.round(Math.log2(40075016.686/(2*half/4))),13,19);
-  let tx0,tx1,ty0,ty1;
-  for(;;){tx0=Math.floor(t2x(x0,z));tx1=Math.floor(t2x(x1,z));ty0=Math.floor(t2y(y1,z));ty1=Math.floor(t2y(y0,z));
-    if((tx1-tx0+1)*(ty1-ty0+1)<=36||z<=12)break;z--;}
-  const nx=tx1-tx0+1,ny=ty1-ty0+1;
+// ---------- Sol : tuiles + carte de bruit, drapées sur le relief ----------
+let groundToken=0,tileCache={key:'',canvas:null};
+async function fetchTiles(ext,sat){
+  const nx=ext.tx1-ext.tx0+1,ny=ext.ty1-ext.ty0+1;
   const cv=document.createElement('canvas');cv.width=nx*256;cv.height=ny*256;
   const ctx=cv.getContext('2d');ctx.fillStyle='#141821';ctx.fillRect(0,0,cv.width,cv.height);
+  const z=ext.z;
   const urlFor=(x,y)=>sat
     ?'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+z+'/'+y+'/'+x
     :'https://a.basemaps.cartocdn.com/dark_all/'+z+'/'+x+'/'+y+'.png';
   const jobs=[];let okc=0;
-  for(let x=tx0;x<=tx1;x++)for(let y=ty0;y<=ty1;y++){
+  for(let x=ext.tx0;x<=ext.tx1;x++)for(let y=ext.ty0;y<=ext.ty1;y++){
     jobs.push(new Promise(res=>{const im=new Image();im.crossOrigin='anonymous';
-      im.onload=function(){try{ctx.drawImage(im,(x-tx0)*256,(y-ty0)*256);okc++;}catch(e){}res();};
+      im.onload=function(){try{ctx.drawImage(im,(x-ext.tx0)*256,(y-ext.ty0)*256);okc++;}catch(e){}res();};
       im.onerror=function(){res();};im.src=urlFor(x,y);}));}
   await Promise.all(jobs);
-  if(tok!==tileToken||!$('f3d-tg-map').checked||!F.open)return;
-  if(!okc){T.ground.visible=true;T.grid.visible=true;return;}
-  const s=2*EXT/Math.pow(2,z);
-  const mx0=tx0*s-EXT,mx1=(tx1+1)*s-EXT,my1=EXT-ty0*s,my0=EXT-(ty1+1)*s;
-  const tex=new THREE.CanvasTexture(cv);tex.anisotropy=4;
-  const geo=new THREE.PlaneGeometry((mx1-mx0)*F.k,(my1-my0)*F.k);geo.rotateX(-Math.PI/2);
-  const mesh=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:tex}));
-  mesh.position.set(((mx0+mx1)/2-F.center.x)*F.k,-0.05,-(((my0+my1)/2-F.center.y)*F.k));
-  T.scene.add(mesh);T.tileMesh=mesh;
+  return okc?cv:null;
+}
+function drawIso(ctx,ext,W,H){
+  const gj=state.isoGeojson;if(!gj||!gj.features)return;
+  const per=F.period||state.period;
+  const al=clamp((typeof state.opacity==='number'?state.opacity:0.85),0.3,1);
+  ctx.save();ctx.globalAlpha=al;
+  gj.features.forEach(f=>{
+    const p=f.properties||{};if(p.PERIOD!==per)return;
+    const lvl=p.ISOLVL||0;if(lvl<state.minLevel)return;
+    const g=f.geometry;if(!g)return;
+    const polys=g.type==='Polygon'?[g.coordinates]:(g.type==='MultiPolygon'?g.coordinates:[]);
+    const col=colorFor(lvl);
+    ctx.fillStyle=col;ctx.strokeStyle=col;ctx.lineWidth=1;
+    polys.forEach(rings=>{ctx.beginPath();
+      rings.forEach(r=>{for(let i=0;i<r.length;i++){const m=ll2merc(r[i][0],r[i][1]);
+        const x=(m[0]-ext.mx0)/(ext.mx1-ext.mx0)*W;
+        const y=(ext.my1-m[1])/(ext.my1-ext.my0)*H;
+        if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}ctx.closePath();});
+      ctx.fill('evenodd');ctx.stroke();});
+  });
+  ctx.restore();
+}
+async function updateGround(){
+  const T=F.T;if(!T)return;
+  const local=(F.mode==='local');
+  const mapOn=!local&&$('f3d-tg-map').checked;
+  const isoOn=!local&&$('f3d-tg-iso').checked&&!!state.isoGeojson;
+  const demOn=F.terrainOn;
+  const need=mapOn||isoOn||demOn;
+  T.ground.visible=!need;T.grid.visible=!need;
+  const tok=++groundToken;
+  if(T.groundMesh){T.scene.remove(T.groundMesh);T.groundMesh.geometry.dispose();
+    if(T.groundMesh.material.map)T.groundMesh.material.map.dispose();
+    T.groundMesh.material.dispose();T.groundMesh=null;}
+  if(!need)return;
+  const ext=groundExtent();
+  let tiles=null;
+  if(mapOn){
+    const sat=$('f3d-tg-sat').checked;
+    const tkey=ext.z+'_'+ext.tx0+'_'+ext.ty0+'_'+ext.tx1+'_'+ext.ty1+'_'+(sat?'s':'d');
+    if(tileCache.key===tkey&&tileCache.canvas)tiles=tileCache.canvas;
+    else{tiles=await fetchTiles(ext,sat);
+      if(tok!==groundToken)return;
+      if(tiles)tileCache={key:tkey,canvas:tiles};}
+  }
+  if(!F.open)return;
+  const nx=ext.tx1-ext.tx0+1,ny2=ext.ty1-ext.ty0+1;
+  const W=nx*256,H=ny2*256;
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;
+  const c2=cv.getContext('2d');c2.fillStyle='#141821';c2.fillRect(0,0,W,H);
+  if(tiles)c2.drawImage(tiles,0,0);
+  if(isoOn)drawIso(c2,ext,W,H);
+  const textured=mapOn||isoOn;
+  const w=(ext.mx1-ext.mx0)*F.k,h2=(ext.my1-ext.my0)*F.k;
+  const segX=demOn?clamp(Math.round(w/8),40,140):1;
+  const segY=demOn?clamp(Math.round(h2/8),40,140):1;
+  const geo=new THREE.PlaneGeometry(w,h2,segX,segY);
+  geo.rotateX(-Math.PI/2);
+  const mx=((ext.mx0+ext.mx1)/2-F.center.x)*F.k;
+  const mz=-(((ext.my0+ext.my1)/2-F.center.y)*F.k);
+  if(demOn){
+    const pos=geo.attributes.position;
+    for(let i=0;i<pos.count;i++){
+      const fx=F.center.x+(mx+pos.getX(i))/F.k;
+      const fy=F.center.y+(-(mz+pos.getZ(i)))/F.k;
+      pos.setY(i,demZ(fx,fy)-DEM.z0-0.03);
+    }
+    pos.needsUpdate=true;geo.computeVertexNormals();
+  }else{
+    geo.translate(0,-0.03,0);
+  }
+  let mat;
+  if(textured){const tex=new THREE.CanvasTexture(cv);tex.anisotropy=4;
+    mat=new THREE.MeshBasicMaterial({map:tex});}
+  else{mat=new THREE.MeshLambertMaterial({color:0x1b2230});}
+  const mesh=new THREE.Mesh(geo,mat);
+  mesh.position.set(mx,0,mz);
+  T.scene.add(mesh);T.groundMesh=mesh;
 }
 
 // ---------- Picking, tooltip, détails, profil ----------
@@ -1149,8 +1296,9 @@ function bindPicking(dom){
       txt=(v===null?'—':v.toFixed(1)+' dB')+' · h '+r.h+' m';}
     else{const b=F.sel.find(x=>x._i===p.hit.object.userData._i);
       const f=b?getInterpB(b):null;const pt=p.hit.point;
-      const v=f?f(pt.x,-pt.z,pt.y):null;
-      txt=(v===null?'—':'≈ '+v.toFixed(1)+' dB')+' · h '+pt.y.toFixed(1)+' m';}
+      const zr=Math.max(0,pt.y-((b&&b._base)||0));
+      const v=f?f(pt.x,-pt.z,zr):null;
+      txt=(v===null?'—':'≈ '+v.toFixed(1)+' dB')+' · h '+zr.toFixed(1)+' m';}
     tt.textContent=txt;
     const rect=$('f3d-canvas-wrap').getBoundingClientRect();
     tt.style.left=(e.clientX-rect.left+14)+'px';tt.style.top=(e.clientY-rect.top+10)+'px';tt.style.display='block';
@@ -1169,9 +1317,10 @@ function showProfile(hit){
   const b=F.sel.find(x=>x._i===hit.object.userData._i);if(!b)return;
   const f=getInterpB(b);
   const gx=hit.point.x,gy=-hit.point.z;
-  const vH=f?f(gx,gy,hit.point.y):null;
+  const zr=Math.max(0,hit.point.y-(b._base||0));
+  const vH=f?f(gx,gy,zr):null;
   $('f3d-detail').innerHTML='<b>Façade</b> — bât. '+((b.pk===null||b.pk===undefined)?'—':b.pk)+' · '+
-    (vH===null?'pas de donnée':'<b>'+vH.toFixed(1)+' dB</b> à h '+hit.point.y.toFixed(1)+' m (interpolé)');
+    (vH===null?'pas de donnée':'<b>'+vH.toFixed(1)+' dB</b> à h '+zr.toFixed(1)+' m (interpolé)');
   if(!f){$('f3d-profile').style.display='none';return;}
   const H=b.h,zs=[],vs=[];const dz=Math.max(0.35,H/40);
   for(let z=0.4;z<=H+1e-6;z+=dz){zs.push(z);vs.push(f(gx,gy,z));}
@@ -1217,7 +1366,8 @@ function fillStats(){
   if(!vals.length){$('f3d-stats').textContent=F.recv.length?('Aucune valeur pour '+(F.field||'?')+' / '+(F.period||'?')):'Aucun récepteur chargé — façades en gris';return;}
   const mn=Math.min.apply(null,vals),mx=Math.max.apply(null,vals);
   const mean=vals.reduce((a,b)=>a+b,0)/vals.length;
-  $('f3d-stats').textContent=vals.length+' récepteurs · '+F.period+' · min '+mn.toFixed(1)+' / moy '+mean.toFixed(1)+' / max '+mx.toFixed(1)+' dB';
+  $('f3d-stats').textContent=vals.length+' récepteurs · '+F.period+' · min '+mn.toFixed(1)+' / moy '+mean.toFixed(1)+' / max '+mx.toFixed(1)+' dB'
+    +(F.terrainOn?' · relief actif':'');
 }
 function fillPeriods(){
   const el=$('f3d-periods');el.innerHTML='';
@@ -1236,7 +1386,7 @@ function fitCam(b){
   const r=b.rings[0];let x0=1/0,z0=1/0,x1=-1/0,z1=-1/0;
   r.forEach(p=>{const a=lx(p[0]),c=lzW(p[1]);if(a<x0)x0=a;if(a>x1)x1=a;if(c<z0)z0=c;if(c>z1)z1=c;});
   const ct=F.T.controls;
-  ct.target.set((x0+x1)/2,b.h*0.45,(z0+z1)/2);
+  ct.target.set((x0+x1)/2,(b._base||0)+b.h*0.45,(z0+z1)/2);
   ct.sph.radius=Math.max(45,Math.hypot(x1-x0,z1-z0)*2.1+b.h*1.6);
   ct.sph.theta=Math.PI*0.28;ct.sph.phi=Math.PI*0.34;ct.refresh();
 }
@@ -1253,8 +1403,8 @@ $('f3d-close').addEventListener('click',close3d);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&F.open)close3d();});
 $('f3d-field').addEventListener('change',function(){F.field=this.value;rebuild();});
 $('f3d-tg-recv').addEventListener('change',function(){if(F.T&&F.T.recvMesh)F.T.recvMesh.visible=this.checked;});
-['f3d-tg-ctx','f3d-tg-roads'].forEach(id=>$(id).addEventListener('change',function(){if(F.open)rebuild();}));
-['f3d-tg-map','f3d-tg-sat'].forEach(id=>$(id).addEventListener('change',function(){if(F.open)updateTiles();}));
+['f3d-tg-ctx','f3d-tg-roads','f3d-tg-dem'].forEach(id=>$(id).addEventListener('change',function(){if(F.open)rebuild();}));
+['f3d-tg-map','f3d-tg-sat','f3d-tg-iso'].forEach(id=>$(id).addEventListener('change',function(){if(F.open)updateGround();}));
 $('f3d-shot').addEventListener('click',function(){
   if(!F.T)return;F.T.renderer.render(F.T.scene,F.T.camera);
   const a=document.createElement('a');a.download='facades_3d.png';
@@ -1266,19 +1416,24 @@ window.F3D={open:async function(i){
   if(!F.sel.length){const ok=await loadFacadeData();if(!ok){setStatus('⚠️ Données façades introuvables (data/facades/…)','error');return;}}
   initThree();
   $('f3d-modal').classList.add('open');F.open=true;resize3d();
-  if(F.mode!=='local'){
-    ['f3d-tg-ctx','f3d-tg-roads','f3d-tg-map'].forEach(id=>{$(id).disabled=false;});
+  const local=(F.mode==='local');
+  if(!local){
+    ['f3d-tg-ctx','f3d-tg-roads','f3d-tg-map','f3d-tg-iso'].forEach(id=>{$(id).disabled=false;});
     try{if(!state.buildingData&&typeof loadBuildings==='function')await loadBuildings();}catch(e){}
     try{if(!state.routeData&&typeof loadRouteTraffic==='function')await loadRouteTraffic();}catch(e){}
+    await loadDem();
+    const dt=$('f3d-tg-dem');
+    if(DEM.available){dt.disabled=false;if(!DEM.defaulted){dt.checked=true;DEM.defaulted=true;}}
+    else{dt.checked=false;dt.disabled=true;}
   }else{
-    ['f3d-tg-ctx','f3d-tg-roads','f3d-tg-map'].forEach(id=>{$(id).checked=false;$(id).disabled=true;});
+    ['f3d-tg-ctx','f3d-tg-roads','f3d-tg-map','f3d-tg-iso','f3d-tg-dem'].forEach(id=>{$(id).checked=false;$(id).disabled=true;});
   }
   const b=F.sel[F.targetI]||F.sel[0];
-  setFrame(b);F.lastTileKey='';
+  setFrame(b);tileCache={key:'',canvas:null};
   fillPeriods();fillFields();
-  rebuild();fitCam(b);
+  rebuild();fitCam(F.sel[F.targetI]||F.sel[0]);
   $('f3d-bldg-name').textContent='bâtiment '+((b.pk===null||b.pk===undefined)?('#'+(F.targetI+1)):b.pk);
-  $('f3d-src').textContent=(F.srcRecv||'récepteurs introuvables — façades en gris')+'   ·   '+F.srcSel;
+  $('f3d-src').textContent=(F.srcRecv||'récepteurs introuvables — façades en gris')+'   ·   '+F.srcSel+(DEM.available?('   ·   relief : '+DEM.src):'');
   $('f3d-detail').innerHTML='Clic sur un récepteur = détails · Clic sur une façade = profil vertical au point cliqué';
   $('f3d-profile').style.display='none';
   cancelAnimationFrame(rafId);loop();
@@ -1296,6 +1451,7 @@ $('tog-facades').addEventListener('change',async function(){
 });
 async function refreshIfOn(){
   if(!$('tog-facades').checked)return;
+  DEM.tried=false;DEM.available=false;DEM.pts=null;DEM.idx=null;DEM.z0=null;
   const ok=await loadFacadeData();
   if(ok){showMapLayer(false);
     setStatus('✓ Façades rechargées ('+(F.srcRecv||F.srcSel).split('/').slice(-2).join('/')+')','ok');}
