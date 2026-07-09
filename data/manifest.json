@@ -315,6 +315,10 @@
     "iso_T5_H95.geojson"
   ],
   "facades": {
+    "_root": [
+      "dem.json",
+      "dem.png"
+    ],
     "tout": [
       "building_selection.geojson",
       "facade_noise.geojson"
