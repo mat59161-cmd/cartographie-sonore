@@ -87,6 +87,8 @@ def main():
     ap.add_argument('--size', type=int, default=1024, help='côté max en pixels (défaut 1024)')
     ap.add_argument('--res', type=float, default=None, help='résolution en m/pixel (prioritaire sur --size)')
     ap.add_argument('--out', default='.', help='dossier de sortie (défaut : courant)')
+    ap.add_argument('--smooth', type=float, default=None,
+                    help='lissage du relief : sigma gaussien en mètres (défaut : 2 x la cellule ; 0 = brut)')
     a = ap.parse_args()
 
     print(f'Lecture de {a.input} ...')
@@ -153,6 +155,25 @@ def main():
             Z[fill] = s[fill] / c[fill]
             it += 1
         print(f'  Interpolation : dilatation ({it} passes, scipy absent)')
+
+    # Lissage (supprime les cônes/arêtes du TIN issus des points épars)
+    sm = a.smooth if a.smooth is not None else 2.0 * cell
+    if sm > 0:
+        sigma_px = sm / cell
+        try:
+            from scipy.ndimage import gaussian_filter
+            Z = gaussian_filter(Z, sigma=sigma_px, mode='nearest')
+            meth = 'gaussien scipy'
+        except ImportError:
+            it = max(1, min(40, int(round(1.5 * sigma_px * sigma_px))))
+            for _ in range(it):
+                Pd = np.pad(Z, 1, mode='edge')
+                Z = (Pd[:-2,:-2]+Pd[:-2,1:-1]+Pd[:-2,2:]+Pd[1:-1,:-2]+Pd[1:-1,1:-1]
+                     +Pd[1:-1,2:]+Pd[2:,:-2]+Pd[2:,1:-1]+Pd[2:,2:]) / 9.0
+            meth = f'box 3x3 x{it}'
+        print(f'  Lissage : sigma {sm:.1f} m ({meth})')
+    else:
+        print('  Lissage : désactivé (--smooth 0)')
 
     # Encodage 16 bits sur R+G
     v16 = np.clip(np.round((Z - zmin) / (zmax - zmin) * 65535), 0, 65535).astype(np.uint32)
