@@ -244,7 +244,7 @@
       <div>
         <div class="f3d-sec-title">Affichage</div>
         <div class="toggle-row"><span>Récepteurs (points)</span><label class="toggle"><input type="checkbox" id="f3d-tg-recv" checked><span class="toggle-slider"></span></label></div>
-        <div class="toggle-row"><span>Bâtiments voisins</span><label class="toggle"><input type="checkbox" id="f3d-tg-ctx" checked><span class="toggle-slider"></span></label></div>
+        <div class="toggle-row"><span>Tous les bâtiments</span><label class="toggle"><input type="checkbox" id="f3d-tg-ctx" checked><span class="toggle-slider"></span></label></div>
         <div class="toggle-row"><span>Routes</span><label class="toggle"><input type="checkbox" id="f3d-tg-roads" checked><span class="toggle-slider"></span></label></div>
         <div class="toggle-row"><span>Relief (DEM)</span><label class="toggle"><input type="checkbox" id="f3d-tg-dem"><span class="toggle-slider"></span></label></div>
         <div class="toggle-row"><span>Carte de bruit au sol</span><label class="toggle"><input type="checkbox" id="f3d-tg-iso" checked><span class="toggle-slider"></span></label></div>
@@ -749,7 +749,7 @@ function colorHex(v){const c=lvlClass(v);return c===null?'#39424f':PALETTE[c].co
 const F={sel:[],recv:[],mode:null,center:null,k:1,diag:120,
   periods:[],period:null,fields:[],field:null,
   open:false,targetI:0,srcSel:'',srcRecv:'',layer:null,manifest:null,
-  terrainOn:false,T:null};
+  terrainOn:false,demRad:0,T:null};
 let baseByPk=new Map();
 
 // ---------- CRS ----------
@@ -924,7 +924,19 @@ function demZ(fx,fy){
   let sw=0,sv=0;for(let i=0;i<bd.length;i++){const w=1/bd[i];sw+=w;sv+=w*bv[i];}
   return sv/sw;
 }
-function baseAt(fx,fy){return F.terrainOn?(demZ(fx,fy)-DEM.z0):0;}
+function terrainStep(ext){
+  const w=(ext.mx1-ext.mx0)*F.k;
+  const segX=clamp(Math.round(w/6),40,180);
+  return (ext.mx1-ext.mx0)/segX;
+}
+function demZAvg(fx,fy){
+  const r=F.demRad||0;
+  if(!r)return demZ(fx,fy);
+  let s=0;
+  for(let a=-1;a<=1;a++)for(let b2=-1;b2<=1;b2++)s+=demZ(fx+a*r,fy+b2*r);
+  return s/9;
+}
+function baseAt(fx,fy){return F.terrainOn?(demZAvg(fx,fy)-DEM.z0):0;}
 
 // ---------- Couche 2D : bâtiments étudiés surlignés ----------
 function selToWgs(){
@@ -1022,8 +1034,24 @@ function setFrame(b){
     if(a<x0)x0=a;if(a>x1)x1=a;if(c<y0)y0=c;if(c>y1)y1=c;}));
   F.diag=Math.max(60,Math.hypot(x1-x0,y1-y0));
 }
+function sceneHalf(){
+  let mx=Math.max(240,F.diag*1.8);
+  const eat=(fx,fy)=>{const a=Math.abs(lx(fx))+40,b2=Math.abs(lyG(fy))+40;if(a>mx)mx=a;if(b2>mx)mx=b2;};
+  F.sel.forEach(bb=>bb.rings[0].forEach(p=>eat(p[0],p[1])));
+  try{
+    if($('f3d-tg-ctx').checked&&state.buildingData){const md=crsMode(state.buildingData);
+      (state.buildingData.features||[]).forEach(f=>{const g=f.geometry;if(!g)return;
+        const polys=g.type==='Polygon'?[g.coordinates]:(g.type==='MultiPolygon'?g.coordinates:[]);
+        polys.forEach(rings=>rings[0].forEach(c=>{const q=toFrame(c,md);eat(q[0],q[1]);}));});}
+    if($('f3d-tg-roads').checked&&state.routeData){const md=crsMode(state.routeData);
+      (state.routeData.features||[]).forEach(f=>{const gm=f.geometry;if(!gm)return;
+        const lines=gm.type==='LineString'?[gm.coordinates]:(gm.type==='MultiLineString'?gm.coordinates:[]);
+        lines.forEach(cs=>cs.forEach(c=>{const q=toFrame(c,md);eat(q[0],q[1]);}));});}
+  }catch(e){}
+  return Math.min(mx,4000)/F.k;
+}
 function groundExtent(){
-  const half=Math.max(240,F.diag*1.8)/F.k;
+  const half=sceneHalf();
   const x0=F.center.x-half,x1=F.center.x+half,y0=F.center.y-half,y1=F.center.y+half;
   const t2x=(mx,zz)=>(mx+EXT)/(2*EXT)*Math.pow(2,zz);
   const t2y=(my,zz)=>(EXT-my)/(2*EXT)*Math.pow(2,zz);
@@ -1062,8 +1090,14 @@ function getInterpB(b){
     const pad=35/F.k;
     own=rs.filter(r=>r.x>=x0-pad&&r.x<=x1+pad&&r.y>=y0-pad&&r.y<=y1+pad);
   }
+  // Pour la coloration de CE mur, on écarte les récepteurs au-dessus du toit :
+  // là-haut il n'y a plus de façade (champ libre), leurs valeurs ne sont pas
+  // représentatives du mur. Garde-fou : si le filtre vide tout, on garde tel quel.
+  if(b.h){const cap=b.h+0.75;const capped=own.filter(r=>r.h<=cap);if(capped.length)own=capped;}
   const pts=own.map(r=>({x:lx(r.x),y:lyG(r.y),z:r.h,v:getVal(r)})).filter(p=>p.v!==null);
-  const f=makeIDW(pts);interpCache.set(key,f);return f;
+  const f=makeIDW(pts);
+  if(f){let mz=0;for(let i2=0;i2<pts.length;i2++)if(pts[i2].z>mz)mz=pts[i2].z;f.hTop=mz;}
+  interpCache.set(key,f);return f;
 }
 
 // ---------- Constructions 3D (avec altitude de base) ----------
@@ -1120,6 +1154,7 @@ function addSel(g,b){
           const zRel=Math.max(0,y-b._base);
           pos.push(gx,y,-gy);
           C.set(colorHex(interp?interp(gx,gy,zRel):null));
+          if(interp&&interp.hTop!==undefined&&zRel>interp.hTop+0.6)C.multiplyScalar(0.75);
           col.push(C.r,C.g,C.b);}}
       for(let a2=0;a2<nS;a2++)for(let k2=0;k2<nZ;k2++){
         const c0=vi+a2*(nZ+1)+k2,c1=vi+(a2+1)*(nZ+1)+k2;
@@ -1136,17 +1171,16 @@ function addSel(g,b){
 }
 function ctxBuildings(){
   const out=[];if(!state.buildingData)return out;
-  const R=Math.max(260,F.diag*2.0);
-  const selC=F.sel.map(b=>{const r=b.rings[0];let sx=0,sy=0;r.forEach(p=>{sx+=p[0];sy+=p[1];});return[sx/r.length,sy/r.length];});
+  const md=crsMode(state.buildingData);
+  const selC=F.sel.map(bb=>{const r=bb.rings[0];let sx=0,sy=0;r.forEach(p=>{sx+=p[0];sy+=p[1];});return[sx/r.length,sy/r.length];});
   let i=100000;
   (state.buildingData.features||[]).forEach(f=>{const g=f.geometry;if(!g)return;const p=f.properties||{};
     const h=Math.max(1,num(propGet(p,['HEIGHT','HEIGHT_WALL','HAUTEUR']))??8);
     const polys=g.type==='Polygon'?[g.coordinates]:(g.type==='MultiPolygon'?g.coordinates:[]);
     polys.forEach(rings=>{
-      const fr=rings.map(r=>r.map(c=>ll2merc(c[0],c[1])));
+      const fr=rings.map(r=>r.map(c=>toFrame(c,md)));
       const r0=fr[0];let sx=0,sy=0;r0.forEach(pt=>{sx+=pt[0];sy+=pt[1];});
       const cx2=sx/r0.length,cy2=sy/r0.length;
-      if(Math.hypot(lx(cx2),lyG(cy2))>R)return;
       for(let s2=0;s2<selC.length;s2++){if(Math.hypot(cx2-selC[s2][0],cy2-selC[s2][1])*F.k<1.5)return;}
       out.push({pk:null,h:h,_i:i++,_base:0,_cx:cx2,_cy:cy2,rings:fr});});
   });
@@ -1165,13 +1199,11 @@ function addStrip(g,p1,p2,w){
 }
 function addRoadsAll(g){
   if(!state.routeData)return;
-  const R=Math.max(300,F.diag*2.2);
+  const md=crsMode(state.routeData);
   (state.routeData.features||[]).forEach(f=>{const gm=f.geometry;if(!gm)return;
     const lines=gm.type==='LineString'?[gm.coordinates]:(gm.type==='MultiLineString'?gm.coordinates:[]);
-    lines.forEach(cs=>{const m=cs.map(c=>ll2merc(c[0],c[1]));
-      let near=false;for(let i=0;i<m.length;i++){if(Math.hypot(lx(m[i][0]),lyG(m[i][1]))<R){near=true;break;}}
-      if(!near)return;
-      for(let i=0;i<m.length-1;i++)addStrip(g,m[i],m[i+1],7);});
+    lines.forEach(cs=>{const m2=cs.map(c=>toFrame(c,md));
+      for(let i=0;i<m2.length-1;i++)addStrip(g,m2[i],m2[i+1],7);});
   });
 }
 function addRecv(g){
@@ -1196,7 +1228,7 @@ function rebuild(){
   disposeGroup(T.world);T.walls=[];T.recvMesh=null;T.recvMeta=[];
   const local=(F.mode==='local');
   F.terrainOn=!local&&DEM.available&&$('f3d-tg-dem').checked;
-  if(F.terrainOn){DEM.z0=null;if(!DEM.grid){const ext=groundExtent();demIndexFor(ext);}DEM.z0=demZ(F.center.x,F.center.y);}
+  if(F.terrainOn){DEM.z0=null;const ext=groundExtent();if(!DEM.grid)demIndexFor(ext);F.demRad=terrainStep(ext)/2;DEM.z0=demZAvg(F.center.x,F.center.y);}else{F.demRad=0;}
   baseByPk=new Map();
   F.sel.forEach(b=>{const r=b.rings[0];let sx=0,sy=0;r.forEach(p=>{sx+=p[0];sy+=p[1];});
     b._base=baseAt(sx/r.length,sy/r.length);
@@ -1279,8 +1311,8 @@ async function updateGround(){
   if(isoOn)drawIso(c2,ext,W,H);
   const textured=mapOn||isoOn;
   const w=(ext.mx1-ext.mx0)*F.k,h2=(ext.my1-ext.my0)*F.k;
-  const segX=demOn?clamp(Math.round(w/8),40,140):1;
-  const segY=demOn?clamp(Math.round(h2/8),40,140):1;
+  const segX=demOn?clamp(Math.round(w/6),40,180):1;
+  const segY=demOn?clamp(Math.round(h2/6),40,180):1;
   const geo=new THREE.PlaneGeometry(w,h2,segX,segY);
   geo.rotateX(-Math.PI/2);
   const mx=((ext.mx0+ext.mx1)/2-F.center.x)*F.k;
@@ -1290,7 +1322,7 @@ async function updateGround(){
     for(let i=0;i<pos.count;i++){
       const fx=F.center.x+(mx+pos.getX(i))/F.k;
       const fy=F.center.y+(-(mz+pos.getZ(i)))/F.k;
-      pos.setY(i,demZ(fx,fy)-DEM.z0-0.03);
+      pos.setY(i,demZAvg(fx,fy)-DEM.z0-0.03);
     }
     pos.needsUpdate=true;geo.computeVertexNormals();
   }else{
@@ -1299,7 +1331,7 @@ async function updateGround(){
   let mat;
   if(textured){const tex=new THREE.CanvasTexture(cv);tex.anisotropy=4;
     mat=new THREE.MeshBasicMaterial({map:tex});}
-  else{mat=new THREE.MeshLambertMaterial({color:0x1b2230});}
+  else{mat=new THREE.MeshLambertMaterial({color:0x27303c});}
   const mesh=new THREE.Mesh(geo,mat);
   mesh.position.set(mx,0,mz);
   T.scene.add(mesh);T.groundMesh=mesh;
@@ -1336,7 +1368,8 @@ function bindPicking(dom){
       const f=b?getInterpB(b):null;const pt=p.hit.point;
       const zr=Math.max(0,pt.y-((b&&b._base)||0));
       const v=f?f(pt.x,-pt.z,zr):null;
-      txt=(v===null?'—':'≈ '+v.toFixed(1)+' dB')+' · h '+zr.toFixed(1)+' m';}
+      const ex=(f&&f.hTop!==undefined&&zr>f.hTop+0.6)?' · extrapolé':'';
+      txt=(v===null?'—':'≈ '+v.toFixed(1)+' dB')+' · h '+zr.toFixed(1)+' m'+ex;}
     tt.textContent=txt;
     const rect=$('f3d-canvas-wrap').getBoundingClientRect();
     tt.style.left=(e.clientX-rect.left+14)+'px';tt.style.top=(e.clientY-rect.top+10)+'px';tt.style.display='block';
@@ -1358,7 +1391,7 @@ function showProfile(hit){
   const zr=Math.max(0,hit.point.y-(b._base||0));
   const vH=f?f(gx,gy,zr):null;
   $('f3d-detail').innerHTML='<b>Façade</b> — bât. '+((b.pk===null||b.pk===undefined)?'—':b.pk)+' · '+
-    (vH===null?'pas de donnée':'<b>'+vH.toFixed(1)+' dB</b> à h '+zr.toFixed(1)+' m (interpolé)');
+    (vH===null?'pas de donnée':'<b>'+vH.toFixed(1)+' dB</b> à h '+zr.toFixed(1)+' m ('+((f&&f.hTop!==undefined&&zr>f.hTop+0.6)?'extrapolé':'interpolé')+')');
   if(!f){$('f3d-profile').style.display='none';return;}
   const H=b.h,zs=[],vs=[];const dz=Math.max(0.35,H/40);
   for(let z=0.4;z<=H+1e-6;z+=dz){zs.push(z);vs.push(f(gx,gy,z));}
