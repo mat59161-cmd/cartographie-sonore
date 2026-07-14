@@ -321,7 +321,38 @@
     ],
     "tout": [
       "building_selection.geojson",
-      "facade_noise.geojson"
+      "facade_noise_T0_H40.geojson",
+      "facade_noise_T0_H60.geojson",
+      "facade_noise_T0_H80.geojson",
+      "facade_noise_T0_H95.geojson",
+      "facade_noise_T10_H40.geojson",
+      "facade_noise_T10_H60.geojson",
+      "facade_noise_T10_H80.geojson",
+      "facade_noise_T10_H95.geojson",
+      "facade_noise_T15_H40.geojson",
+      "facade_noise_T15_H60.geojson",
+      "facade_noise_T15_H80.geojson",
+      "facade_noise_T15_H95.geojson",
+      "facade_noise_T20_H40.geojson",
+      "facade_noise_T20_H60.geojson",
+      "facade_noise_T20_H80.geojson",
+      "facade_noise_T20_H95.geojson",
+      "facade_noise_T25_H40.geojson",
+      "facade_noise_T25_H60.geojson",
+      "facade_noise_T25_H80.geojson",
+      "facade_noise_T25_H95.geojson",
+      "facade_noise_T30_H40.geojson",
+      "facade_noise_T30_H60.geojson",
+      "facade_noise_T30_H80.geojson",
+      "facade_noise_T30_H95.geojson",
+      "facade_noise_T5_H40.geojson",
+      "facade_noise_T5_H60.geojson",
+      "facade_noise_T5_H80.geojson",
+      "facade_noise_T5_H95.geojson"
+    ],
+    "tout_dem": [
+      "building_selection.geojson",
+      "facade_noise_T15_H60.geojson"
     ]
   }
 }
