@@ -241,6 +241,14 @@
         <div class="f3d-sec-title">Indicateur</div>
         <select id="f3d-field"></select>
       </div>
+      <div id="f3d-atmo" style="display:none">
+        <div class="f3d-sec-title">Atmosphère</div>
+        <div style="display:flex;gap:8px">
+          <select id="f3d-sel-T" style="flex:1"></select>
+          <select id="f3d-sel-H" style="flex:1"></select>
+        </div>
+        <div id="f3d-atmo-note" style="font-size:9px;color:var(--muted);margin-top:5px;line-height:1.5"></div>
+      </div>
       <div>
         <div class="f3d-sec-title">Affichage</div>
         <div class="toggle-row"><span>Récepteurs (points)</span><label class="toggle"><input type="checkbox" id="f3d-tg-recv" checked><span class="toggle-slider"></span></label></div>
@@ -749,7 +757,7 @@ function colorHex(v){const c=lvlClass(v);return c===null?'#39424f':PALETTE[c].co
 const F={sel:[],recv:[],mode:null,center:null,k:1,diag:120,
   periods:[],period:null,fields:[],field:null,
   open:false,targetI:0,srcSel:'',srcRecv:'',layer:null,manifest:null,
-  terrainOn:false,demRad:0,T:null};
+  terrainOn:false,demRad:0,syncing:false,T:null};
 let baseByPk=new Map();
 
 // ---------- CRS ----------
@@ -1474,12 +1482,64 @@ $('f3d-close').addEventListener('click',close3d);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&F.open)close3d();});
 $('f3d-field').addEventListener('change',function(){F.field=this.value;rebuild();});
 $('f3d-tg-recv').addEventListener('change',function(){if(F.T&&F.T.recvMesh)F.T.recvMesh.visible=this.checked;});
-['f3d-tg-ctx','f3d-tg-roads','f3d-tg-dem'].forEach(id=>$(id).addEventListener('change',function(){if(F.open)rebuild();}));
+['f3d-tg-ctx','f3d-tg-roads'].forEach(id=>$(id).addEventListener('change',function(){if(F.open)rebuild();}));
 ['f3d-tg-map','f3d-tg-sat','f3d-tg-iso'].forEach(id=>$(id).addEventListener('change',function(){if(F.open)updateGround();}));
 $('f3d-shot').addEventListener('click',function(){
   if(!F.T)return;F.T.renderer.render(F.T.scene,F.T.camera);
   const a=document.createElement('a');a.download='facades_3d.png';
   a.href=F.T.renderer.domElement.toDataURL('image/png');a.click();});
+
+// ---------- Synchronisation 2D <-> 3D (DEM + atmosphere) ----------
+async function reloadForContext(){
+  F.syncing=true;
+  try{ if(typeof loadIso==='function') await loadIso(); }catch(e){}
+  DEM.tried=false;DEM.available=false;DEM.pts=null;DEM.idx=null;DEM.grid=null;DEM.z0=null;
+  const ok=await loadFacadeData();
+  await loadDem();
+  F.syncing=false;
+  if(!ok){setStatus('⚠️ Pas de façades pour cette combinaison','error');return false;}
+  showMapLayer(false);
+  const dt=$('f3d-tg-dem');
+  if(DEM.available){dt.disabled=false;}
+  else{dt.checked=false;dt.disabled=true;}
+  fillPeriods();fillFields();fillAtmo();
+  rebuild();
+  $('f3d-src').textContent=(F.srcRecv||'récepteurs introuvables — façades en gris')+'   ·   '+F.srcSel+(DEM.available?('   ·   relief : '+DEM.src):'');
+  return true;
+}
+$('f3d-tg-dem').addEventListener('change',async function(){
+  if(!F.open)return;
+  const t2d=document.getElementById('tog-dem');
+  if(t2d&&t2d.checked!==this.checked){
+    t2d.checked=this.checked;
+    t2d.dispatchEvent(new Event('change'));
+  }
+  await reloadForContext();
+});
+function fillAtmo(){
+  const box=$('f3d-atmo'),sT=$('f3d-sel-T'),sH=$('f3d-sel-H');
+  const Ts=(typeof TEMPERATURES!=='undefined')?TEMPERATURES:[];
+  const Hs=(typeof HUMIDITIES!=='undefined')?HUMIDITIES:[];
+  if(!Ts.length||!Hs.length){box.style.display='none';return;}
+  box.style.display='block';
+  sT.innerHTML=Ts.map((t,i)=>'<option value="'+i+'"'+(i===state.tempIndex?' selected':'')+'>'+t+' °C</option>').join('');
+  sH.innerHTML=Hs.map((h,i)=>'<option value="'+i+'"'+(i===state.humIndex?' selected':'')+'>'+h+' %</option>').join('');
+  $('f3d-atmo-note').textContent='Synchronisé avec la 2D — fichier : facade_noise_'+((typeof getKey==='function')?getKey():'')+'.geojson (repli si absent)';
+}
+async function onAtmoChange(){
+  const ti=Number($('f3d-sel-T').value),hi=Number($('f3d-sel-H').value);
+  F.syncing=true;
+  try{
+    const sT=document.getElementById('sl-temp'),sH=document.getElementById('sl-hum');
+    if(sT)sT.value=ti;
+    if(sH)sH.value=hi;
+    if(typeof onTemp==='function'&&state.tempIndex!==ti)onTemp(ti);
+    if(typeof onHum==='function'&&state.humIndex!==hi)onHum(hi);
+  }catch(e){}
+  await reloadForContext();
+}
+$('f3d-sel-T').addEventListener('change',onAtmoChange);
+$('f3d-sel-H').addEventListener('change',onAtmoChange);
 
 // ---------- Ouverture ----------
 window.F3D={open:async function(i){
@@ -1494,14 +1554,16 @@ window.F3D={open:async function(i){
     try{if(!state.routeData&&typeof loadRouteTraffic==='function')await loadRouteTraffic();}catch(e){}
     await loadDem();
     const dt=$('f3d-tg-dem');
-    if(DEM.available){dt.disabled=false;if(!DEM.defaulted){dt.checked=true;DEM.defaulted=true;}}
+    if(DEM.available){dt.disabled=false;
+      const t2dInit=document.getElementById('tog-dem');
+      dt.checked=!!(t2dInit&&t2dInit.checked);}
     else{dt.checked=false;dt.disabled=true;}
   }else{
     ['f3d-tg-ctx','f3d-tg-roads','f3d-tg-map','f3d-tg-iso','f3d-tg-dem'].forEach(id=>{$(id).checked=false;$(id).disabled=true;});
   }
   const b=F.sel[F.targetI]||F.sel[0];
   setFrame(b);tileCache={key:'',canvas:null};
-  fillPeriods();fillFields();
+  fillPeriods();fillFields();fillAtmo();
   rebuild();fitCam(F.sel[F.targetI]||F.sel[0]);
   $('f3d-bldg-name').textContent='bâtiment '+((b.pk===null||b.pk===undefined)?('#'+(F.targetI+1)):b.pk);
   $('f3d-src').textContent=(F.srcRecv||'récepteurs introuvables — façades en gris')+'   ·   '+F.srcSel+(DEM.available?('   ·   relief : '+DEM.src):'');
@@ -1521,6 +1583,7 @@ $('tog-facades').addEventListener('change',async function(){
   }else{removeMapLayer();}
 });
 async function refreshIfOn(){
+  if(F.syncing)return;
   if(!$('tog-facades').checked)return;
   DEM.tried=false;DEM.available=false;DEM.pts=null;DEM.idx=null;DEM.grid=null;DEM.z0=null;
   const ok=await loadFacadeData();
