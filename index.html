@@ -271,7 +271,7 @@
       <div id="f3d-legend"><div class="bar-title">Niveaux — dB(A)</div><div id="f3d-legend-items"></div></div>
     </div>
   </div>
-  <div class="f3d-foot"><span id="f3d-stats">—</span><span style="margin-left:auto">F3D v12 · Fond : © CartoDB · © Esri</span></div>
+  <div class="f3d-foot"><span id="f3d-stats">—</span><span style="margin-left:auto">F3D v13 · Fond : © CartoDB · © Esri</span></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -725,7 +725,7 @@ init();
 <script>
 (function(){
 'use strict';
-console.log('[Façades 3D] module v12 — routes sur la surface affichée');
+console.log('[Façades 3D] module v13 — routes peintes sur le relief');
 // ═══════════════════════════════════════════════════════════════
 //  FAÇADES 3D — module intégré (three.js r128)
 //  Données : data/facades/<scenario>/facade_noise[_Txx_Hyy].geojson
@@ -1284,14 +1284,15 @@ function rebuild(){
   disposeGroup(T.world);T.walls=[];T.recvMesh=null;T.recvMeta=[];
   const local=(F.mode==='local');
   F.terrainOn=!local&&DEM.available&&$('f3d-tg-dem').checked;
-  if(F.terrainOn){DEM.z0=null;const ext=groundExtent();if(!DEM.grid)demIndexFor(ext);F.demRad=terrainStep(ext)/2;DEM.z0=demZAvg(F.center.x,F.center.y);buildSurf(ext);}else{F.demRad=0;F.surf=null;}
+  if(F.terrainOn){DEM.z0=null;const ext=groundExtent();if(!DEM.grid)demIndexFor(ext);F.demRad=terrainStep(ext)/2;DEM.z0=demZAvg(F.center.x,F.center.y);buildSurf(ext);
+    console.log('[F3D] terrain :',Math.round((F.surf.ext.mx1-F.surf.ext.mx0)*F.k)+' m, '+F.surf.nx+'x'+F.surf.ny+' noeuds');}else{F.demRad=0;F.surf=null;}
   baseByPk=new Map();
   F.sel.forEach(b=>{
     b._base=footBase(b.rings);
     if(b.pk!==null&&b.pk!==undefined)baseByPk.set(b.pk,b._base);});
   F.sel.forEach(b=>addSel(T.world,b));
   if(!local&&$('f3d-tg-ctx').checked)ctxBuildings().forEach(b=>{b._base=footBase(b.rings);addCtx(T.world,b);});
-  if(!local&&$('f3d-tg-roads').checked)addRoadsAll(T.world);
+  if(!local&&!F.terrainOn&&$('f3d-tg-roads').checked)addRoadsAll(T.world);
   addRecv(T.world);
   updateGround();fillLegend();fillStats();
 }
@@ -1335,11 +1336,29 @@ function drawIso(ctx,ext,W,H){
   });
   ctx.restore();
 }
+function drawRoadsTex(ctx,ext,W,H){
+  const RD=state.routeData;if(!RD)return;
+  const md=crsMode(RD);
+  const pxw=Math.max(2,(7/F.k)*W/(ext.mx1-ext.mx0));
+  ctx.save();
+  ctx.strokeStyle='#3a4150';ctx.lineWidth=pxw;ctx.lineCap='round';ctx.lineJoin='round';ctx.globalAlpha=0.95;
+  (RD.features||[]).forEach(f=>{const gm=f.geometry;if(!gm)return;
+    const lines=gm.type==='LineString'?[gm.coordinates]:(gm.type==='MultiLineString'?gm.coordinates:[]);
+    lines.forEach(cs=>{ctx.beginPath();
+      cs.forEach((c,i)=>{const q=toFrame(c,md);
+        const x=(q[0]-ext.mx0)/(ext.mx1-ext.mx0)*W;
+        const y=(ext.my1-q[1])/(ext.my1-ext.my0)*H;
+        if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);});
+      ctx.stroke();});
+  });
+  ctx.restore();
+}
 async function updateGround(){
   const T=F.T;if(!T)return;
   const local=(F.mode==='local');
   const mapOn=!local&&$('f3d-tg-map').checked;
   const isoOn=!local&&$('f3d-tg-iso').checked&&!!state.isoGeojson;
+  const roadsTex=F.terrainOn&&$('f3d-tg-roads').checked&&!!state.routeData;
   const demOn=F.terrainOn;
   const need=mapOn||isoOn||demOn;
   T.ground.visible=!need;T.grid.visible=!need;
@@ -1365,7 +1384,8 @@ async function updateGround(){
   const c2=cv.getContext('2d');c2.fillStyle='#141821';c2.fillRect(0,0,W,H);
   if(tiles)c2.drawImage(tiles,0,0);
   if(isoOn)drawIso(c2,ext,W,H);
-  const textured=mapOn||isoOn;
+  if(roadsTex)drawRoadsTex(c2,ext,W,H);
+  const textured=mapOn||isoOn||roadsTex;
   const w=(ext.mx1-ext.mx0)*F.k,h2=(ext.my1-ext.my0)*F.k;
   const segX=demOn?clamp(Math.round(w/5),40,256):1;
   const segY=demOn?clamp(Math.round(h2/5),40,256):1;
