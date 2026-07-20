@@ -271,7 +271,7 @@
       <div id="f3d-legend"><div class="bar-title">Niveaux — dB(A)</div><div id="f3d-legend-items"></div></div>
     </div>
   </div>
-  <div class="f3d-foot"><span id="f3d-stats">—</span><span style="margin-left:auto">Fond : © CartoDB · © Esri</span></div>
+  <div class="f3d-foot"><span id="f3d-stats">—</span><span style="margin-left:auto">F3D v11 · Fond : © CartoDB · © Esri</span></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -725,6 +725,7 @@ init();
 <script>
 (function(){
 'use strict';
+console.log('[Façades 3D] module v11 — routes drapées en travers');
 // ═══════════════════════════════════════════════════════════════
 //  FAÇADES 3D — module intégré (three.js r128)
 //  Données : data/facades/<scenario>/facade_noise[_Txx_Hyy].geojson
@@ -930,7 +931,7 @@ function demZ(fx,fy){
 }
 function terrainStep(ext){
   const w=(ext.mx1-ext.mx0)*F.k;
-  const segX=clamp(Math.round(w/6),40,180);
+  const segX=clamp(Math.round(w/5),40,256);
   return (ext.mx1-ext.mx0)/segX;
 }
 function demZAvg(fx,fy){
@@ -1190,37 +1191,43 @@ function ctxBuildings(){
   });
   return out;
 }
-function addStrip(g,p1,p2,w){
-  const x1=lx(p1[0]),g1=lyG(p1[1]),x2=lx(p2[0]),g2=lyG(p2[1]);
-  const dx=x2-x1,dy=g2-g1,L=Math.hypot(dx,dy);if(L<0.1)return;
-  const e1=baseAt(p1[0],p1[1])+0.35,e2=baseAt(p2[0],p2[1])+0.35;
-  const nx=-dy/L*w/2,ny=dx/L*w/2;
-  const geo=new THREE.BufferGeometry();
-  geo.setAttribute('position',new THREE.Float32BufferAttribute([
-    x1+nx,e1,-(g1+ny), x2+nx,e2,-(g2+ny), x2-nx,e2,-(g2-ny), x1-nx,e1,-(g1-ny)],3));
-  geo.setIndex([0,1,2,0,2,3]);geo.computeVertexNormals();
-  g.add(new THREE.Mesh(geo,MAT.road));
-}
 function addRoadsAll(g){
   if(!state.routeData)return;
   const md=crsMode(state.routeData);
+  const pos=[],idx=[];let vi=0;
+  const CLR=0.35;
+  function strip(p1,p2,w){
+    const x1=lx(p1[0]),g1=lyG(p1[1]),x2=lx(p2[0]),g2=lyG(p2[1]);
+    const dx=x2-x1,dy=g2-g1,L=Math.hypot(dx,dy);if(L<0.1)return;
+    const nx=-dy/L*w/2,ny=dx/L*w/2;
+    // Drapage EN TRAVERS : altitude echantillonnee aux 4 coins de la bande
+    const fnx=nx/F.k,fny=ny/F.k;
+    const e11=baseAt(p1[0]+fnx,p1[1]+fny)+CLR,e12=baseAt(p1[0]-fnx,p1[1]-fny)+CLR;
+    const e21=baseAt(p2[0]+fnx,p2[1]+fny)+CLR,e22=baseAt(p2[0]-fnx,p2[1]-fny)+CLR;
+    pos.push(x1+nx,e11,-(g1+ny), x2+nx,e21,-(g2+ny), x2-nx,e22,-(g2-ny), x1-nx,e12,-(g1-ny));
+    idx.push(vi,vi+1,vi+2, vi,vi+2,vi+3);vi+=4;
+  }
   (state.routeData.features||[]).forEach(f=>{const gm=f.geometry;if(!gm)return;
     const lines=gm.type==='LineString'?[gm.coordinates]:(gm.type==='MultiLineString'?gm.coordinates:[]);
     lines.forEach(cs=>{const m2=cs.map(c=>toFrame(c,md));
       for(let i=0;i<m2.length-1;i++){
-        const a=m2[i],b=m2[i+1];
-        if(!F.terrainOn){addStrip(g,a,b,7);continue;}
-        // Suivi du relief : subdivision du segment au pas du maillage terrain
-        const Lloc=Math.hypot((b[0]-a[0])*F.k,(b[1]-a[1])*F.k);
+        const a2=m2[i],b2=m2[i+1];
+        if(!F.terrainOn){strip(a2,b2,7);continue;}
+        const Lloc=Math.hypot((b2[0]-a2[0])*F.k,(b2[1]-a2[1])*F.k);
         const stepL=Math.max(6,((F.demRad||4)*F.k)*1.6);
         const n=Math.max(1,Math.ceil(Lloc/stepL));
         for(let s2=0;s2<n;s2++){
           const t0=s2/n,t1=(s2+1)/n;
-          addStrip(g,[a[0]+(b[0]-a[0])*t0,a[1]+(b[1]-a[1])*t0],
-                     [a[0]+(b[0]-a[0])*t1,a[1]+(b[1]-a[1])*t1],7);
+          strip([a2[0]+(b2[0]-a2[0])*t0,a2[1]+(b2[1]-a2[1])*t0],
+                [a2[0]+(b2[0]-a2[0])*t1,a2[1]+(b2[1]-a2[1])*t1],7);
         }
       }});
   });
+  if(!pos.length)return;
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  geo.setIndex(idx);geo.computeVertexNormals();
+  g.add(new THREE.Mesh(geo,MAT.road));
 }
 function addRecv(g){
   const rows=F.recv.filter(r=>r.period===F.period);
@@ -1238,6 +1245,15 @@ function addRecv(g){
   mesh.visible=$('f3d-tg-recv').checked;
   g.add(mesh);F.T.recvMesh=mesh;
 }
+function footBase(rings){
+  const r=rings[0];let sx=0,sy=0;r.forEach(pp=>{sx+=pp[0];sy+=pp[1];});
+  let base=baseAt(sx/r.length,sy/r.length);
+  if(F.terrainOn){
+    const step=Math.max(1,Math.floor(r.length/16));
+    for(let i=0;i<r.length;i+=step)base=Math.min(base,baseAt(r[i][0],r[i][1]));
+  }
+  return base;
+}
 function rebuild(){
   const T=F.T;if(!T)return;
   interpCache.clear();
@@ -1246,11 +1262,11 @@ function rebuild(){
   F.terrainOn=!local&&DEM.available&&$('f3d-tg-dem').checked;
   if(F.terrainOn){DEM.z0=null;const ext=groundExtent();if(!DEM.grid)demIndexFor(ext);F.demRad=terrainStep(ext)/2;DEM.z0=demZAvg(F.center.x,F.center.y);}else{F.demRad=0;}
   baseByPk=new Map();
-  F.sel.forEach(b=>{const r=b.rings[0];let sx=0,sy=0;r.forEach(p=>{sx+=p[0];sy+=p[1];});
-    b._base=baseAt(sx/r.length,sy/r.length);
+  F.sel.forEach(b=>{
+    b._base=footBase(b.rings);
     if(b.pk!==null&&b.pk!==undefined)baseByPk.set(b.pk,b._base);});
   F.sel.forEach(b=>addSel(T.world,b));
-  if(!local&&$('f3d-tg-ctx').checked)ctxBuildings().forEach(b=>{b._base=baseAt(b._cx,b._cy);addCtx(T.world,b);});
+  if(!local&&$('f3d-tg-ctx').checked)ctxBuildings().forEach(b=>{b._base=footBase(b.rings);addCtx(T.world,b);});
   if(!local&&$('f3d-tg-roads').checked)addRoadsAll(T.world);
   addRecv(T.world);
   updateGround();fillLegend();fillStats();
@@ -1327,8 +1343,8 @@ async function updateGround(){
   if(isoOn)drawIso(c2,ext,W,H);
   const textured=mapOn||isoOn;
   const w=(ext.mx1-ext.mx0)*F.k,h2=(ext.my1-ext.my0)*F.k;
-  const segX=demOn?clamp(Math.round(w/6),40,180):1;
-  const segY=demOn?clamp(Math.round(h2/6),40,180):1;
+  const segX=demOn?clamp(Math.round(w/5),40,256):1;
+  const segY=demOn?clamp(Math.round(h2/5),40,256):1;
   const geo=new THREE.PlaneGeometry(w,h2,segX,segY);
   geo.rotateX(-Math.PI/2);
   const mx=((ext.mx0+ext.mx1)/2-F.center.x)*F.k;
