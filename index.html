@@ -1193,7 +1193,7 @@ function ctxBuildings(){
 function addStrip(g,p1,p2,w){
   const x1=lx(p1[0]),g1=lyG(p1[1]),x2=lx(p2[0]),g2=lyG(p2[1]);
   const dx=x2-x1,dy=g2-g1,L=Math.hypot(dx,dy);if(L<0.1)return;
-  const e1=baseAt(p1[0],p1[1])+0.15,e2=baseAt(p2[0],p2[1])+0.15;
+  const e1=baseAt(p1[0],p1[1])+0.35,e2=baseAt(p2[0],p2[1])+0.35;
   const nx=-dy/L*w/2,ny=dx/L*w/2;
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.Float32BufferAttribute([
@@ -1207,7 +1207,19 @@ function addRoadsAll(g){
   (state.routeData.features||[]).forEach(f=>{const gm=f.geometry;if(!gm)return;
     const lines=gm.type==='LineString'?[gm.coordinates]:(gm.type==='MultiLineString'?gm.coordinates:[]);
     lines.forEach(cs=>{const m2=cs.map(c=>toFrame(c,md));
-      for(let i=0;i<m2.length-1;i++)addStrip(g,m2[i],m2[i+1],7);});
+      for(let i=0;i<m2.length-1;i++){
+        const a=m2[i],b=m2[i+1];
+        if(!F.terrainOn){addStrip(g,a,b,7);continue;}
+        // Suivi du relief : subdivision du segment au pas du maillage terrain
+        const Lloc=Math.hypot((b[0]-a[0])*F.k,(b[1]-a[1])*F.k);
+        const stepL=Math.max(6,((F.demRad||4)*F.k)*1.6);
+        const n=Math.max(1,Math.ceil(Lloc/stepL));
+        for(let s2=0;s2<n;s2++){
+          const t0=s2/n,t1=(s2+1)/n;
+          addStrip(g,[a[0]+(b[0]-a[0])*t0,a[1]+(b[1]-a[1])*t0],
+                     [a[0]+(b[0]-a[0])*t1,a[1]+(b[1]-a[1])*t1],7);
+        }
+      }});
   });
 }
 function addRecv(g){
@@ -1292,10 +1304,10 @@ async function updateGround(){
   const need=mapOn||isoOn||demOn;
   T.ground.visible=!need;T.grid.visible=!need;
   const tok=++groundToken;
-  if(T.groundMesh){T.scene.remove(T.groundMesh);T.groundMesh.geometry.dispose();
-    if(T.groundMesh.material.map)T.groundMesh.material.map.dispose();
-    T.groundMesh.material.dispose();T.groundMesh=null;}
-  if(!need)return;
+  const oldMesh=T.groundMesh;
+  function killGround(msh){if(!msh)return;T.scene.remove(msh);msh.geometry.dispose();
+    if(msh.material.map)msh.material.map.dispose();msh.material.dispose();}
+  if(!need){killGround(oldMesh);T.groundMesh=null;return;}
   const ext=groundExtent();
   let tiles=null;
   if(mapOn){
@@ -1333,12 +1345,15 @@ async function updateGround(){
     geo.translate(0,-0.03,0);
   }
   let mat;
-  if(textured){const tex=new THREE.CanvasTexture(cv);tex.anisotropy=4;
+  if(textured){const tex=new THREE.CanvasTexture(cv);tex.anisotropy=(T.renderer.capabilities&&T.renderer.capabilities.getMaxAnisotropy)?T.renderer.capabilities.getMaxAnisotropy():4;
     mat=new THREE.MeshBasicMaterial({map:tex});}
   else{mat=new THREE.MeshLambertMaterial({color:0x27303c});}
   const mesh=new THREE.Mesh(geo,mat);
   mesh.position.set(mx,0,mz);
-  T.scene.add(mesh);T.groundMesh=mesh;
+  if(tok!==groundToken){geo.dispose();if(mat.map)mat.map.dispose();mat.dispose();return;}
+  T.scene.add(mesh);
+  if(oldMesh&&oldMesh!==mesh)killGround(oldMesh);
+  T.groundMesh=mesh;
 }
 
 // ---------- Picking, tooltip, détails, profil ----------
