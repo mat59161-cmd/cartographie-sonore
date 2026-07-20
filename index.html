@@ -157,8 +157,6 @@
       <div class="slider-ticks" id="ticks-hum"></div>
     </div>
     <div class="slider-row">
-      <div class="slider-label"><span>Vent <span style="font-size:9px;color:var(--muted)">(info)</span></span><span class="val" id="val-wind">5 m/s</span></div>
-      <input type="range" id="sl-wind" min="0" max="20" value="5">
     </div>
     <div class="env-note" id="env-note"></div>
     <div class="preload-info" id="preload-info"></div>
@@ -499,12 +497,10 @@ function onTemp(i){state.tempIndex=i;document.getElementById('val-temp').textCon
 function onHum(i){state.humIndex=i;document.getElementById('val-hum').textContent=getHum()+'%';updateTicks();updateEnv();loadIso();}
 document.getElementById('sl-temp').addEventListener('input',function(){onTemp(+this.value);});
 document.getElementById('sl-hum').addEventListener('input',function(){onHum(+this.value);});
-document.getElementById('sl-wind').addEventListener('input',function(){document.getElementById('val-wind').textContent=this.value+' m/s';updateEnv();});
 function updateEnv(){
-  const T=getTemp(),H=getHum(),W=+document.getElementById('sl-wind').value;
+  const T=getTemp(),H=getHum();
   let n=T<=0?'❄️ Froid : absorption HF élevée.':T>=25?'☀️ Chaud : propagation accrue.':'🌡️ Conditions tempérées.';
   if(H<=40)n+=' Air sec : forte absorption HF.';else if(H>=80)n+=' Humidité élevée : absorption réduite.';
-  if(W>8)n+=' 💨 Vent fort : réfraction possible.';
   document.getElementById('env-note').textContent=n;
 }
 
@@ -1009,7 +1005,7 @@ function initThree(){
   MAT.selRoof=new THREE.MeshLambertMaterial({color:0x3c4558,side:THREE.DoubleSide});
   MAT.selWall=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide});
   MAT.line=new THREE.LineBasicMaterial({color:0x4a5568});
-  MAT.road=new THREE.MeshLambertMaterial({color:0x3a4150});
+  MAT.road=new THREE.MeshLambertMaterial({color:0x3a4150,side:THREE.DoubleSide});
   const wrap=$('f3d-canvas-wrap');
   const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
   renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
@@ -1482,7 +1478,12 @@ $('f3d-close').addEventListener('click',close3d);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&F.open)close3d();});
 $('f3d-field').addEventListener('change',function(){F.field=this.value;rebuild();});
 $('f3d-tg-recv').addEventListener('change',function(){if(F.T&&F.T.recvMesh)F.T.recvMesh.visible=this.checked;});
-['f3d-tg-ctx','f3d-tg-roads'].forEach(id=>$(id).addEventListener('change',function(){if(F.open)rebuild();}));
+$('f3d-tg-ctx').addEventListener('change',function(){if(F.open)rebuild();});
+$('f3d-tg-roads').addEventListener('change',async function(){
+  if(!F.open)return;
+  if(this.checked&&!state.routeData&&typeof loadRouteTraffic==='function'){try{await loadRouteTraffic();}catch(e){}}
+  rebuild();
+});
 ['f3d-tg-map','f3d-tg-sat','f3d-tg-iso'].forEach(id=>$(id).addEventListener('change',function(){if(F.open)updateGround();}));
 $('f3d-shot').addEventListener('click',function(){
   if(!F.T)return;F.T.renderer.render(F.T.scene,F.T.camera);
