@@ -251,7 +251,7 @@
         <div class="f3d-sec-title">Affichage</div>
         <div class="toggle-row"><span>Récepteurs (points)</span><label class="toggle"><input type="checkbox" id="f3d-tg-recv" checked><span class="toggle-slider"></span></label></div>
         <div class="toggle-row"><span>Tous les bâtiments</span><label class="toggle"><input type="checkbox" id="f3d-tg-ctx" checked><span class="toggle-slider"></span></label></div>
-        <div class="toggle-row"><span>Routes</span><label class="toggle"><input type="checkbox" id="f3d-tg-roads" checked><span class="toggle-slider"></span></label></div>
+        <div class="toggle-row"><span>Routes</span><label class="toggle"><input type="checkbox" id="f3d-tg-roads"><span class="toggle-slider"></span></label></div>
         <div class="toggle-row"><span>Relief (DEM)</span><label class="toggle"><input type="checkbox" id="f3d-tg-dem"><span class="toggle-slider"></span></label></div>
         <div class="toggle-row"><span>Carte de bruit au sol</span><label class="toggle"><input type="checkbox" id="f3d-tg-iso" checked><span class="toggle-slider"></span></label></div>
         <div class="toggle-row"><span>Fond de carte au sol</span><label class="toggle"><input type="checkbox" id="f3d-tg-map" checked><span class="toggle-slider"></span></label></div>
@@ -271,7 +271,7 @@
       <div id="f3d-legend"><div class="bar-title">Niveaux — dB(A)</div><div id="f3d-legend-items"></div></div>
     </div>
   </div>
-  <div class="f3d-foot"><span id="f3d-stats">—</span><span style="margin-left:auto">F3D v11 · Fond : © CartoDB · © Esri</span></div>
+  <div class="f3d-foot"><span id="f3d-stats">—</span><span style="margin-left:auto">F3D v12 · Fond : © CartoDB · © Esri</span></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -725,7 +725,7 @@ init();
 <script>
 (function(){
 'use strict';
-console.log('[Façades 3D] module v11 — routes drapées en travers');
+console.log('[Façades 3D] module v12 — routes sur la surface affichée');
 // ═══════════════════════════════════════════════════════════════
 //  FAÇADES 3D — module intégré (three.js r128)
 //  Données : data/facades/<scenario>/facade_noise[_Txx_Hyy].geojson
@@ -754,7 +754,7 @@ function colorHex(v){const c=lvlClass(v);return c===null?'#39424f':PALETTE[c].co
 const F={sel:[],recv:[],mode:null,center:null,k:1,diag:120,
   periods:[],period:null,fields:[],field:null,
   open:false,targetI:0,srcSel:'',srcRecv:'',layer:null,manifest:null,
-  terrainOn:false,demRad:0,syncing:false,T:null};
+  terrainOn:false,demRad:0,syncing:false,surf:null,T:null};
 let baseByPk=new Map();
 
 // ---------- CRS ----------
@@ -941,7 +941,31 @@ function demZAvg(fx,fy){
   for(let a=-1;a<=1;a++)for(let b2=-1;b2<=1;b2++)s+=demZ(fx+a*r,fy+b2*r);
   return s/9;
 }
-function baseAt(fx,fy){return F.terrainOn?(demZAvg(fx,fy)-DEM.z0):0;}
+// Grille de surface : LE terrain affiche. Construite une fois par rebuild ;
+// routes, socles et recepteurs echantillonnent cette meme grille (bilineaire),
+// donc plus aucun ecart possible entre "ce qu'on voit" et "ou on pose".
+function buildSurf(ext){
+  const w=(ext.mx1-ext.mx0)*F.k,h2=(ext.my1-ext.my0)*F.k;
+  const nx=clamp(Math.round(w/5),40,256)+1,ny=clamp(Math.round(h2/5),40,256)+1;
+  const hs=new Float32Array(nx*ny);
+  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const fx=ext.mx0+(ext.mx1-ext.mx0)*i/(nx-1);
+    const fy=ext.my1-(ext.my1-ext.my0)*j/(ny-1);
+    hs[j*nx+i]=demZAvg(fx,fy)-DEM.z0;
+  }
+  F.surf={ext:ext,nx:nx,ny:ny,h:hs};
+}
+function surfZ(fx,fy){
+  const S=F.surf;if(!S)return demZAvg(fx,fy)-DEM.z0;
+  let gx=(fx-S.ext.mx0)/(S.ext.mx1-S.ext.mx0)*(S.nx-1);
+  let gy=(S.ext.my1-fy)/(S.ext.my1-S.ext.my0)*(S.ny-1);
+  gx=clamp(gx,0,S.nx-1);gy=clamp(gy,0,S.ny-1);
+  const i0=Math.floor(gx),j0=Math.floor(gy),i1=Math.min(S.nx-1,i0+1),j1=Math.min(S.ny-1,j0+1);
+  const tx=gx-i0,ty=gy-j0;
+  const z00=S.h[j0*S.nx+i0],z10=S.h[j0*S.nx+i1],z01=S.h[j1*S.nx+i0],z11=S.h[j1*S.nx+i1];
+  return (z00*(1-tx)+z10*tx)*(1-ty)+(z01*(1-tx)+z11*tx)*ty;
+}
+function baseAt(fx,fy){return F.terrainOn?surfZ(fx,fy):0;}
 
 // ---------- Couche 2D : bâtiments étudiés surlignés ----------
 function selToWgs(){
@@ -1260,7 +1284,7 @@ function rebuild(){
   disposeGroup(T.world);T.walls=[];T.recvMesh=null;T.recvMeta=[];
   const local=(F.mode==='local');
   F.terrainOn=!local&&DEM.available&&$('f3d-tg-dem').checked;
-  if(F.terrainOn){DEM.z0=null;const ext=groundExtent();if(!DEM.grid)demIndexFor(ext);F.demRad=terrainStep(ext)/2;DEM.z0=demZAvg(F.center.x,F.center.y);}else{F.demRad=0;}
+  if(F.terrainOn){DEM.z0=null;const ext=groundExtent();if(!DEM.grid)demIndexFor(ext);F.demRad=terrainStep(ext)/2;DEM.z0=demZAvg(F.center.x,F.center.y);buildSurf(ext);}else{F.demRad=0;F.surf=null;}
   baseByPk=new Map();
   F.sel.forEach(b=>{
     b._base=footBase(b.rings);
@@ -1354,7 +1378,7 @@ async function updateGround(){
     for(let i=0;i<pos.count;i++){
       const fx=F.center.x+(mx+pos.getX(i))/F.k;
       const fy=F.center.y+(-(mz+pos.getZ(i)))/F.k;
-      pos.setY(i,demZAvg(fx,fy)-DEM.z0-0.03);
+      pos.setY(i,surfZ(fx,fy)-0.03);
     }
     pos.needsUpdate=true;geo.computeVertexNormals();
   }else{
@@ -1525,7 +1549,7 @@ $('f3d-shot').addEventListener('click',function(){
 async function reloadForContext(){
   F.syncing=true;
   try{ if(typeof loadIso==='function') await loadIso(); }catch(e){}
-  DEM.tried=false;DEM.available=false;DEM.pts=null;DEM.idx=null;DEM.grid=null;DEM.z0=null;
+  DEM.tried=false;DEM.available=false;DEM.pts=null;DEM.idx=null;DEM.grid=null;DEM.z0=null;F.surf=null;
   const ok=await loadFacadeData();
   await loadDem();
   F.syncing=false;
@@ -1617,7 +1641,7 @@ $('tog-facades').addEventListener('change',async function(){
 async function refreshIfOn(){
   if(F.syncing)return;
   if(!$('tog-facades').checked)return;
-  DEM.tried=false;DEM.available=false;DEM.pts=null;DEM.idx=null;DEM.grid=null;DEM.z0=null;
+  DEM.tried=false;DEM.available=false;DEM.pts=null;DEM.idx=null;DEM.grid=null;DEM.z0=null;F.surf=null;
   const ok=await loadFacadeData();
   if(ok){showMapLayer(false);
     setStatus('✓ Façades rechargées ('+(F.srcRecv||F.srcSel).split('/').slice(-2).join('/')+')','ok');}
