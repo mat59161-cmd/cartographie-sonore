@@ -271,7 +271,7 @@
       <div id="f3d-legend"><div class="bar-title">Niveaux — dB(A)</div><div id="f3d-legend-items"></div></div>
     </div>
   </div>
-  <div class="f3d-foot"><span id="f3d-stats">—</span><span style="margin-left:auto">F3D v13 · Fond : © CartoDB · © Esri</span></div>
+  <div class="f3d-foot"><span id="f3d-stats">—</span><span style="margin-left:auto">F3D v14 · Fond : © CartoDB · © Esri</span></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -725,7 +725,7 @@ init();
 <script>
 (function(){
 'use strict';
-console.log('[Façades 3D] module v13 — routes peintes sur le relief');
+console.log('[Façades 3D] module v14 — murs sur sol local + texture nette');
 // ═══════════════════════════════════════════════════════════════
 //  FAÇADES 3D — module intégré (three.js r128)
 //  Données : data/facades/<scenario>/facade_noise[_Txx_Hyy].geojson
@@ -966,6 +966,8 @@ function surfZ(fx,fy){
   return (z00*(1-tx)+z10*tx)*(1-ty)+(z01*(1-tx)+z11*tx)*ty;
 }
 function baseAt(fx,fy){return F.terrainOn?surfZ(fx,fy):0;}
+function baseAtLocal(gx,gy){return F.terrainOn?surfZ(F.center.x+gx/F.k,F.center.y+gy/F.k):0;}
+function groundAtHit(pt){return F.terrainOn?baseAtLocal(pt.x,-pt.z):0;}
 
 // ---------- Couche 2D : bâtiments étudiés surlignés ----------
 function selToWgs(){
@@ -1087,7 +1089,7 @@ function groundExtent(){
   let z=clamp(Math.round(Math.log2(40075016.686/(2*half/4))),13,19);
   let tx0,tx1,ty0,ty1;
   for(;;){tx0=Math.floor(t2x(x0,z));tx1=Math.floor(t2x(x1,z));ty0=Math.floor(t2y(y1,z));ty1=Math.floor(t2y(y0,z));
-    if((tx1-tx0+1)*(ty1-ty0+1)<=36||z<=12)break;z--;}
+    if((tx1-tx0+1)*(ty1-ty0+1)<=64||z<=12)break;z--;}
   const s=2*EXT/Math.pow(2,z);
   return{z:z,tx0:tx0,tx1:tx1,ty0:ty0,ty1:ty1,
     mx0:tx0*s-EXT,mx1:(tx1+1)*s-EXT,my1:EXT-ty0*s,my0:EXT-(ty1+1)*s};
@@ -1138,10 +1140,12 @@ function disposeGroup(g){
   while(g.children.length)g.remove(g.children[0]);
 }
 function addOutline(g,rings,base,h){
+  const top=base+h;
   const p=[];rings.forEach(rg=>{const r=closeRing(rg);
-    for(let i=0;i<r.length-1;i++){const a=r[i],b=r[i+1];
-      const ax=lx(a[0]),az=lzW(a[1]),bx=lx(b[0]),bz=lzW(b[1]);
-      p.push(ax,base,az,bx,base,bz, ax,base+h,az,bx,base+h,bz, ax,base,az,ax,base+h,az);}});
+    for(let i=0;i<r.length-1;i++){const a=r[i],b2=r[i+1];
+      const ax=lx(a[0]),az=lzW(a[1]),bx=lx(b2[0]),bz=lzW(b2[1]);
+      const ga=baseAtLocal(ax,-az),gb=baseAtLocal(bx,-bz);
+      p.push(ax,ga,az,bx,gb,bz, ax,top,az,bx,top,bz, ax,ga,az,ax,top,az);}});
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.Float32BufferAttribute(p,3));
   g.add(new THREE.LineSegments(geo,MAT.line));
@@ -1155,13 +1159,22 @@ function addRoof(g,b,mat){
   }catch(e){}
 }
 function addCtx(g,b){
-  const sk=F.terrainOn?2:0;
+  const top=b._base+b.h,SK=F.terrainOn?2.5:0;
+  const stepL=Math.max(6,((F.demRad||4)*F.k)*1.6);
   const pos=[],idx=[];let vi=0;
   b.rings.forEach(rg=>{const r=closeRing(rg);
-    for(let i=0;i<r.length-1;i++){const a=r[i],c=r[i+1];
-      pos.push(lx(a[0]),b._base-sk,lzW(a[1]), lx(c[0]),b._base-sk,lzW(c[1]),
-               lx(c[0]),b._base+b.h,lzW(c[1]), lx(a[0]),b._base+b.h,lzW(a[1]));
-      idx.push(vi,vi+1,vi+2, vi,vi+2,vi+3);vi+=4;}});
+    for(let i=0;i<r.length-1;i++){
+      const ax=lx(r[i][0]),ay=lyG(r[i][1]),cx=lx(r[i+1][0]),cy=lyG(r[i+1][1]);
+      const L=Math.hypot(cx-ax,cy-ay);if(L<0.02)continue;
+      const n=F.terrainOn?Math.max(1,Math.ceil(L/stepL)):1;
+      for(let s2=0;s2<n;s2++){
+        const t0=s2/n,t1=(s2+1)/n;
+        const x0=ax+(cx-ax)*t0,y0=ay+(cy-ay)*t0;
+        const x1=ax+(cx-ax)*t1,y1=ay+(cy-ay)*t1;
+        pos.push(x0,baseAtLocal(x0,y0)-SK,-y0, x1,baseAtLocal(x1,y1)-SK,-y1,
+                 x1,top,-y1, x0,top,-y0);
+        idx.push(vi,vi+1,vi+2, vi,vi+2,vi+3);vi+=4;}
+    }});
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
   geo.setIndex(idx);geo.computeVertexNormals();
@@ -1170,17 +1183,20 @@ function addCtx(g,b){
 }
 function addSel(g,b){
   const interp=getInterpB(b);
-  const sk=F.terrainOn?2:0;
+  const SK=F.terrainOn?2.5:0;
+  const top=b._base+b.h;
   const stepS=F.recv.length>4000?3.0:1.6,stepZ=1.2;
+  const nZ=clamp(Math.round((b.h+SK+2)/stepZ),2,56);   // topologie constante
   const pos=[],col=[],idx=[];let vi=0;const C=new THREE.Color();
   b.rings.forEach(rg=>{const r=closeRing(rg);
     for(let i=0;i<r.length-1;i++){const A=r[i],B=r[i+1];
       const ax=lx(A[0]),ay=lyG(A[1]),bx=lx(B[0]),by=lyG(B[1]);
       const L=Math.hypot(bx-ax,by-ay);if(L<0.02)continue;
-      const nS=clamp(Math.round(L/stepS),1,90),nZ=clamp(Math.round((b.h+sk)/stepZ),2,52);
+      const nS=clamp(Math.round(L/stepS),1,90);
       for(let a2=0;a2<=nS;a2++){const t=a2/nS;const gx=ax+(bx-ax)*t,gy=ay+(by-ay)*t;
-        for(let k2=0;k2<=nZ;k2++){const y=b._base-sk+(b.h+sk)*k2/nZ;
-          const zRel=Math.max(0,y-b._base);
+        const gnd=baseAtLocal(gx,gy),y0=gnd-SK;
+        for(let k2=0;k2<=nZ;k2++){const y=y0+(top-y0)*k2/nZ;
+          const zRel=Math.max(0,y-gnd);            // hauteur / sol local = convention NoiseModelling
           pos.push(gx,y,-gy);
           C.set(colorHex(interp?interp(gx,gy,zRel):null));
           if(interp&&interp.hTop!==undefined&&zRel>interp.hTop+0.6)C.multiplyScalar(0.75);
@@ -1193,9 +1209,9 @@ function addSel(g,b){
   geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
   geo.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
   geo.setIndex(idx);
-  const m=new THREE.Mesh(geo,MAT.selWall);
-  m.userData={_i:b._i,h:b.h,isWall:true};
-  g.add(m);F.T.walls.push(m);
+  const mm=new THREE.Mesh(geo,MAT.selWall);
+  mm.userData={_i:b._i,h:b.h,isWall:true};
+  g.add(mm);F.T.walls.push(mm);
   addRoof(g,b,MAT.selRoof);addOutline(g,b.rings,b._base,b.h);
 }
 function ctxBuildings(){
@@ -1262,7 +1278,7 @@ function addRecv(g){
   const mesh=new THREE.InstancedMesh(geo,new THREE.MeshBasicMaterial({}),rows.length);
   const M=new THREE.Matrix4(),C=new THREE.Color();
   rows.forEach((r,i)=>{
-    const base=(r.buildPk!==null&&r.buildPk!==undefined&&baseByPk.has(r.buildPk))?baseByPk.get(r.buildPk):baseAt(r.x,r.y);
+    const base=baseAt(r.x,r.y);   // Z relatif au sol local, comme le calcul
     M.makeTranslation(lx(r.x),base+r.h,lzW(r.y));mesh.setMatrixAt(i,M);
     C.set(colorHex(getVal(r)));mesh.setColorAt(i,C);});
   if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
@@ -1270,11 +1286,13 @@ function addRecv(g){
   g.add(mesh);F.T.recvMesh=mesh;
 }
 function footBase(rings){
+  // Reference du toit : point le plus HAUT sous l'emprise. Les murs
+  // redescendent ensuite jusqu'au sol local -> ni flottement, ni enfouissement.
   const r=rings[0];let sx=0,sy=0;r.forEach(pp=>{sx+=pp[0];sy+=pp[1];});
   let base=baseAt(sx/r.length,sy/r.length);
   if(F.terrainOn){
-    const step=Math.max(1,Math.floor(r.length/16));
-    for(let i=0;i<r.length;i+=step)base=Math.min(base,baseAt(r[i][0],r[i][1]));
+    const step=Math.max(1,Math.floor(r.length/24));
+    for(let i=0;i<r.length;i+=step)base=Math.max(base,baseAt(r[i][0],r[i][1]));
   }
   return base;
 }
@@ -1379,10 +1397,12 @@ async function updateGround(){
   }
   if(!F.open)return;
   const nx=ext.tx1-ext.tx0+1,ny2=ext.ty1-ext.ty0+1;
-  const W=nx*256,H=ny2*256;
+  const bw=nx*256,bh=ny2*256;
+  const SS=clamp(Math.floor(4096/Math.max(bw,bh)),1,4);   // surechantillonnage : iso + routes nettes
+  const W=bw*SS,H=bh*SS;
   const cv=document.createElement('canvas');cv.width=W;cv.height=H;
   const c2=cv.getContext('2d');c2.fillStyle='#141821';c2.fillRect(0,0,W,H);
-  if(tiles)c2.drawImage(tiles,0,0);
+  if(tiles)c2.drawImage(tiles,0,0,W,H);
   if(isoOn)drawIso(c2,ext,W,H);
   if(roadsTex)drawRoadsTex(c2,ext,W,H);
   const textured=mapOn||isoOn||roadsTex;
@@ -1445,7 +1465,7 @@ function bindPicking(dom){
       txt=(v===null?'—':v.toFixed(1)+' dB')+' · h '+r.h+' m';}
     else{const b=F.sel.find(x=>x._i===p.hit.object.userData._i);
       const f=b?getInterpB(b):null;const pt=p.hit.point;
-      const zr=Math.max(0,pt.y-((b&&b._base)||0));
+      const zr=Math.max(0,pt.y-groundAtHit(pt));
       const v=f?f(pt.x,-pt.z,zr):null;
       const ex=(f&&f.hTop!==undefined&&zr>f.hTop+0.6)?' · extrapolé':'';
       txt=(v===null?'—':'≈ '+v.toFixed(1)+' dB')+' · h '+zr.toFixed(1)+' m'+ex;}
@@ -1467,7 +1487,7 @@ function showProfile(hit){
   const b=F.sel.find(x=>x._i===hit.object.userData._i);if(!b)return;
   const f=getInterpB(b);
   const gx=hit.point.x,gy=-hit.point.z;
-  const zr=Math.max(0,hit.point.y-(b._base||0));
+  const zr=Math.max(0,hit.point.y-groundAtHit(hit.point));
   const vH=f?f(gx,gy,zr):null;
   $('f3d-detail').innerHTML='<b>Façade</b> — bât. '+((b.pk===null||b.pk===undefined)?'—':b.pk)+' · '+
     (vH===null?'pas de donnée':'<b>'+vH.toFixed(1)+' dB</b> à h '+zr.toFixed(1)+' m ('+((f&&f.hTop!==undefined&&zr>f.hTop+0.6)?'extrapolé':'interpolé')+')');
