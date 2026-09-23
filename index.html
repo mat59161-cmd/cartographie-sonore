@@ -124,6 +124,18 @@
   #f3d-hint{font-size:9px;color:var(--muted);margin-top:8px;line-height:1.6;padding:5px 8px;background:rgba(255,255,255,.02);border-radius:var(--radius);border:1px solid var(--border)}
   #f3d-hint b{color:var(--text)}
   #f3d-modal select{background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:'DM Mono',monospace;font-size:10px;padding:4px 6px;border-radius:var(--radius);width:100%}
+
+.pblock{margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)}
+.pnote{margin-top:5px;font-size:9px;color:var(--muted);font-style:italic;line-height:1.35}
+.spec-bars{display:flex;align-items:flex-end;gap:1px;height:56px;background:rgba(255,255,255,.03);padding:3px 2px;border-radius:3px}
+.spec-bars .sb{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;min-width:2px}
+.spec-bars .sb>div{border-radius:1px 1px 0 0;transition:opacity .15s}
+.spec-bars .sb:hover>div{opacity:.65}
+.spec-labels{display:flex;gap:1px;margin-top:2px}
+.spec-labels .sl{flex:1;min-width:2px;font-size:8px;color:var(--muted);text-align:center;white-space:nowrap}
+.spec-table{width:100%;border-collapse:collapse;font-size:9px;margin-top:4px}
+.spec-table th{color:var(--muted);font-weight:600;padding:2px 3px;border-bottom:1px solid rgba(255,255,255,.12)}
+.spec-table td{padding:1px 3px;border-bottom:1px solid rgba(255,255,255,.05)}
 </style>
 </head>
 <body>
@@ -190,6 +202,7 @@
     <div class="toggle-row"><span>Afficher les routes (trafic)</span><label class="toggle"><input type="checkbox" id="tog-routes"><span class="toggle-slider"></span></label></div>
     <div class="toggle-row" id="row-dem"><span>Avec topographie (DEM) <span style="font-size:9px;color:var(--muted)" id="dem-hint">— scénarios disponibles</span></span><label class="toggle"><input type="checkbox" id="tog-dem"><span class="toggle-slider"></span></label></div>
     <div class="toggle-row"><span>Fond satellite</span><label class="toggle"><input type="checkbox" id="tog-satellite"><span class="toggle-slider"></span></label></div>
+    <div class="toggle-row"><span>Récepteurs <span style="font-size:9px;color:var(--muted)">📍 points de mesure</span></span><label class="toggle"><input type="checkbox" id="tog-receptors"><span class="toggle-slider"></span></label></div>
     <div class="traffic-legend" id="traffic-legend" style="display:none"><b>🚗 Routes — clic pour détails</b><br>Couleur = intensité du trafic (DJMA)</div>
   </div>
   <div class="section">
@@ -361,7 +374,7 @@ const getFilename=()=>`iso_${getKey()}.geojson`;
 //  MAP
 // ═══════════════════════════════════════
 const map=L.map('map',{center:[46.7915,-71.2313],zoom:15});
-const tileOSM=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'&copy; CartoDB',maxZoom:20}).addTo(map);
+const tileOSM=L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',{attribution:'&copy; Esri, HERE, Garmin, &copy; OpenStreetMap',maxNativeZoom:16,maxZoom:20}).addTo(map);
 const tileSat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'&copy; Esri',maxZoom:20});
 
 // ═══════════════════════════════════════
@@ -715,6 +728,268 @@ function hideLoading(){document.getElementById('loading').classList.remove('visi
 function updateLegend(){document.querySelectorAll('.legend-row').forEach(r=>r.classList.toggle('hidden-lvl',+r.dataset.lvl<state.minLevel));}
 document.getElementById('legend').innerHTML=PALETTE.map(p=>`<div class="legend-row${p.isolvl<1?' hidden-lvl':''}" data-lvl="${p.isolvl}"><div class="legend-swatch" style="background:${p.color}"></div><span>${p.label} dB(A)</span></div>`).join('');
 document.getElementById('db-bar-items').innerHTML=[...PALETTE].reverse().map(p=>`<div class="bar-item"><div class="bar-swatch" style="background:${p.color}"></div><span>${p.label}</span></div>`).join('');
+
+// ═══════════════════════════════════════
+//  RÉCEPTEURS
+// ═══════════════════════════════════════
+// ┌───────────────────────────────────────────────────────────────────┐
+// │  POINTS DE MESURE — niveaux par bande de tiers d'octave             │
+// │                                                                     │
+// │  Colle tes niveaux dans `spectre` : {fréquence_Hz: niveau_dB}       │
+// │  Les positions sont déjà remplies. Laisse {} pour un point non fait.│
+// │                                                                     │
+// │  SPECTRE_EN_DBA (juste en dessous) :                                │
+// │    false → tes niveaux sont en dB linéaire, la pondération A est     │
+// │            appliquée automatiquement  (cas courant)                 │
+// │    true  → tes niveaux sont déjà en dB(A), aucune correction        │
+// └───────────────────────────────────────────────────────────────────┘
+const SPECTRE_EN_DBA = false;
+
+const RECEPTORS = {
+  P1: { lat: 46.792992, lon: -71.231822, name: 'P1 (toit)', spectre: {
+    // 12.5: 0.0,  16: 0.0,   20: 0.0,   25: 0.0,   31.5: 0.0,  40: 0.0,   50: 0.0,
+    // 63:   0.0,  80: 0.0,   100: 0.0,  125: 0.0,  160: 0.0,   200: 0.0,  250: 0.0,
+    // 315:  0.0,  400: 0.0,  500: 0.0,  630: 0.0,  800: 0.0,   1000: 0.0, 1250: 0.0,
+    // 1600: 0.0,  2000: 0.0, 2500: 0.0, 3150: 0.0, 4000: 0.0,  5000: 0.0, 6300: 0.0,
+    // 8000: 0.0,  10000: 0.0, 12500: 0.0, 16000: 0.0,
+  }},
+  P2: { lat: 46.793117, lon: -71.231258, name: 'P2', spectre: {} },
+  P3: { lat: 46.790383, lon: -71.231675, name: 'P3', spectre: {} },
+  P4: { lat: 46.790197, lon: -71.228886, name: 'P4', spectre: {} },
+  P5: { lat: 46.791928, lon: -71.229903, name: 'P5', spectre: {} },
+  P6: { lat: 46.792925, lon: -71.227433, name: 'P6', spectre: {} },
+};
+
+// Pondération A par bande de tiers d'octave (IEC 61672-1)
+const PONDERATION_A = {
+  12.5:-63.4, 16:-56.7, 20:-50.5, 25:-44.7, 31.5:-39.4, 40:-34.6, 50:-30.2,
+  63:-26.2, 80:-22.5, 100:-19.1, 125:-16.1, 160:-13.4, 200:-10.9, 250:-8.6,
+  315:-6.6, 400:-4.8, 500:-3.2, 630:-1.9, 800:-0.8, 1000:0, 1250:0.6,
+  1600:1.0, 2000:1.2, 2500:1.3, 3150:1.2, 4000:1.0, 5000:0.5, 6300:-0.1,
+  8000:-1.1, 10000:-2.5, 12500:-4.3, 16000:-6.6
+};
+
+// Bandes normalisées, pour retrouver la bonne pondération même si tes libellés
+// de fréquence diffèrent légèrement (31,6 au lieu de 31,5 ; 631 au lieu de 630…).
+const BANDES_NORM = Object.keys(PONDERATION_A).map(Number).sort((a,b)=>a-b);
+function bandeProche(f){
+  let best=null, bd=Infinity;
+  for(const b of BANDES_NORM){
+    const d=Math.abs(Math.log10(b)-Math.log10(f));
+    if(d<bd){bd=d;best=b;}
+  }
+  return bd<0.06 ? best : null;   // au-delà de ~15% d'écart : bande non reconnue
+}
+
+// Agrège un spectre : renvoie les bandes + les globaux (dB(A) 63-8k, dB(A) total, dB lin)
+function spectrumStats(spectre){
+  if(!spectre) return null;
+  const bands=[], inconnues=[]; let eModel=0, eAll=0, eLin=0;
+  for(const [f,lvl] of Object.entries(spectre)){
+    if(lvl==null) continue;
+    const freq=parseFloat(f);
+    if(!isFinite(freq)) continue;
+    const norm=bandeProche(freq);
+    if(norm===null && !SPECTRE_EN_DBA){ inconnues.push(freq); continue; }  // on n'invente pas de pondération
+    const w = SPECTRE_EN_DBA ? 0 : PONDERATION_A[norm];
+    const la = lvl + w;
+    const inModel = freq>=56 && freq<=8900;   // bandes couvertes par NoiseModelling (octaves 63–8000)
+    eAll += Math.pow(10, la/10);
+    eLin += Math.pow(10, lvl/10);
+    if(inModel) eModel += Math.pow(10, la/10);
+    bands.push({freq, lvl, la, inModel, norm});
+  }
+  if(!bands.length) return null;
+  bands.sort((a,b)=>a.freq-b.freq);
+  return {
+    bands, inconnues,
+    LAeqModel: eModel>0 ? 10*Math.log10(eModel) : null,
+    LAeqFull:  eAll>0   ? 10*Math.log10(eAll)   : null,
+    Llin:      eLin>0   ? 10*Math.log10(eLin)   : null
+  };
+}
+
+const fmtFreq = f => f>=1000 ? (f/1000)+'k' : String(f);
+
+// Mini graphe en barres du spectre (orange = bandes simulées, gris = hors modèle)
+function spectrumChartHtml(st){
+  const vals=st.bands.map(b=>b.la);
+  const max=Math.max(...vals), min=Math.min(...vals);
+  const range=Math.max(max-min,1);
+  const bars=st.bands.map(b=>{
+    const h=Math.max(3,((b.la-min)/range)*100);
+    const col=b.inModel?'#e2784a':'#4a5764';
+    return `<div class="sb" title="${fmtFreq(b.freq)} Hz — ${b.lvl.toFixed(1)} dB · ${b.la.toFixed(1)} dB(A)">`
+         + `<div style="background:${col};height:${h}%"></div></div>`;
+  }).join('');
+  const labelAt=[63,250,1000,4000,16000];
+  const labels=st.bands.map(b=>`<div class="sl">${labelAt.includes(b.freq)?fmtFreq(b.freq):''}</div>`).join('');
+  return `<div style="margin-top:9px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">
+    <div style="font-size:9px;color:var(--muted);margin-bottom:4px;display:flex;justify-content:space-between">
+      <span>Spectre tiers d'octave — dB(A)</span><span style="color:#4a5764">gris = hors 63–8k</span></div>
+    <div class="spec-bars">${bars}</div>
+    <div class="spec-labels">${labels}</div>
+  </div>`;
+}
+
+// Tableau détaillé des bandes (repliable)
+function spectrumTableHtml(st){
+  const rows=st.bands.map(b=>
+    `<tr style="${b.inModel?'':'opacity:.5'}">
+      <td>${fmtFreq(b.freq)}</td><td style="text-align:right">${b.lvl.toFixed(1)}</td>
+      <td style="text-align:right">${b.la.toFixed(1)}</td></tr>`).join('');
+  return `<details style="margin-top:7px">
+    <summary style="cursor:pointer;font-size:10px;color:var(--muted)">Détail par bande (${st.bands.length})</summary>
+    <table class="spec-table"><thead><tr><th>Hz</th><th style="text-align:right">dB</th><th style="text-align:right">dB(A)</th></tr></thead>
+    <tbody>${rows}</tbody></table></details>`;
+}
+
+// Les mesures disponibles sont la CONTRIBUTION ISOLÉE DU VIBREUR (émergence
+// extraite du bruit de fond). Elles ne sont donc comparables qu'au scénario
+// "vibreur seul" — un scénario combiné (trafic, HX50, tout) inclut des sources
+// que la mesure isolée ne contient pas.
+function scenarioIsComparable(){
+  const sc=getActiveScenario();
+  return sc==='vibreur' || sc==='vibreur_dem';
+}
+
+let receptorMarkers=[];
+let receptorsVisible=false;
+
+// Point-in-polygon (ring)
+function pnpRing(lng,lat,ring){
+  let inside=false;
+  for(let i=0,j=ring.length-1;i<ring.length;j=i++){
+    const xi=ring[i][0],yi=ring[i][1],xj=ring[j][0],yj=ring[j][1];
+    if(((yi>lat)!==(yj>lat))&&(lng<(xj-xi)*(lat-yi)/(yj-yi)+xi))inside=!inside;
+  }
+  return inside;
+}
+function pnpFeature(lng,lat,geom){
+  if(geom.type==='Polygon'){
+    if(!pnpRing(lng,lat,geom.coordinates[0]))return false;
+    for(let i=1;i<geom.coordinates.length;i++)if(pnpRing(lng,lat,geom.coordinates[i]))return false;
+    return true;
+  }else if(geom.type==='MultiPolygon'){
+    return geom.coordinates.some(poly=>{
+      if(!pnpRing(lng,lat,poly[0]))return false;
+      for(let i=1;i<poly.length;i++)if(pnpRing(lng,lat,poly[i]))return false;
+      return true;
+    });
+  }
+  return false;
+}
+
+// Niveau simulé (dB médian de la bande) à un point, pour la période active
+function simulatedLevelAt(lat,lon){
+  if(!state.isoGeojson)return null;
+  let maxLvl=-1;
+  for(const f of state.isoGeojson.features){
+    if(f.properties.PERIOD!==state.period)continue;
+    if(pnpFeature(lon,lat,f.geometry)){
+      const lvl=f.properties.ISOLVL||0;
+      if(lvl>maxLvl)maxLvl=lvl;
+    }
+  }
+  if(maxLvl<0)return null;
+  return maxLvl===0?32:(32.5+maxLvl*5);
+}
+
+// La mesure disponible est un LAeq isolé du vibreur (courte durée, spectre
+// tiers d'octave agrégé en dB(A) par process_receptors.py).
+// Le vibreur émet au même niveau en D/E/N → le simulé est identique sur ces
+// périodes. En revanche LDEN intègre les pénalités (+5 soir, +10 nuit) : ce
+// n'est pas un niveau physique, on n'y calcule donc pas d'écart.
+function receptorPopupHtml(rid,rec){
+  const st=spectrumStats(rec.spectre);
+  const sim=simulatedLevelAt(rec.lat,rec.lon);
+  const comparable=scenarioIsComparable();
+  const isDEN=(state.period==='DEN');
+  const periodLbl=isDEN?'LDEN':('période '+state.period);
+  const measured = st ? st.LAeqModel : null;
+
+  let block='';
+  if(measured==null){
+    block=`<div class="pblock">
+      <div class="popup-row"><span class="popup-key">Simulé (${periodLbl})</span><span>${sim!=null?('<b>'+sim+' dB(A)</b>'):'<span style="color:var(--muted)">hors zone</span>'}</span></div>
+      <div class="popup-row"><span class="popup-key">Mesuré</span><span style="color:var(--muted)">spectre non renseigné</span></div>
+    </div>`;
+  }else if(comparable && !isDEN && sim!=null){
+    const delta=sim-measured;
+    const col=Math.abs(delta)<=3?'#7ec97e':Math.abs(delta)<=6?'#f4c683':'#e8704d';
+    block=`<div class="pblock">
+      <div class="popup-row"><span class="popup-key">Mesuré <span style="font-size:9px;color:var(--muted)">63 Hz–8 kHz</span></span><span><b>${measured.toFixed(1)} dB(A)</b></span></div>
+      <div class="popup-row"><span class="popup-key">Attendu (simulé, ${periodLbl})</span><span><b>${sim} dB(A)</b></span></div>
+      <div class="popup-row"><span class="popup-key">Écart</span><span style="color:${col};font-weight:700">${delta>=0?'+':''}${delta.toFixed(1)} dB</span></div>
+    </div>`;
+  }else if(comparable && isDEN){
+    block=`<div class="pblock">
+      <div class="popup-row"><span class="popup-key">Mesuré <span style="font-size:9px;color:var(--muted)">63 Hz–8 kHz</span></span><span><b>${measured.toFixed(1)} dB(A)</b></span></div>
+      <div class="popup-row"><span class="popup-key">Simulé (LDEN)</span><span>${sim!=null?('<b>'+sim+' dB(A)</b>'):'<span style="color:var(--muted)">hors zone</span>'}</span></div>
+      <div class="pnote">⚠️ Écart non calculé : le LDEN intègre les pénalités (+5 soir / +10 nuit), ce n'est pas un niveau physique. Bascule en D, E ou N.</div>
+    </div>`;
+  }else{
+    block=`<div class="pblock">
+      <div class="popup-row"><span class="popup-key">Mesuré <span style="font-size:9px;color:var(--muted)">63 Hz–8 kHz</span></span><span><b>${measured.toFixed(1)} dB(A)</b></span></div>
+      <div class="popup-row"><span class="popup-key">Simulé (${periodLbl})</span><span>${sim!=null?('<b>'+sim+' dB(A)</b>'):'<span style="color:var(--muted)">hors zone</span>'}</span></div>
+      <div class="pnote">⚠️ Écart non calculé : la mesure ne contient que le vibreur, ce scénario inclut d'autres sources. Bascule sur « Vibreur seul ».</div>
+    </div>`;
+  }
+
+  let extra='';
+  if(st){
+    const hors=st.LAeqFull-st.LAeqModel;
+    extra = spectrumChartHtml(st) + `
+      <div style="margin-top:7px;font-size:10px;color:var(--muted)">
+        <div class="popup-row"><span>Pleine bande (toutes les bandes)</span><span>${st.LAeqFull.toFixed(1)} dB(A)</span></div>
+        <div class="popup-row"><span>Global non pondéré</span><span>${st.Llin.toFixed(1)} dB</span></div>
+        <div class="popup-row"><span>Saisie interprétée comme</span><span style="color:#e2784a">${SPECTRE_EN_DBA?'dB(A)':'dB linéaire'}</span></div>
+        ${SPECTRE_EN_DBA?'':`<div class="pnote">La pondération A est appliquée par le viewer. Si tes niveaux sont <b>déjà</b> en dB(A), passe SPECTRE_EN_DBA à true — sinon ils sont pondérés deux fois et le global est trop bas d'environ 10 dB.</div>`}
+        ${st.inconnues.length?`<div class="pnote" style="color:#e8704d">⚠️ Bandes non reconnues, exclues du calcul : ${st.inconnues.join(', ')} Hz</div>`:''}
+        ${hors>=1?`<div class="pnote">Énergie hors 63 Hz–8 kHz : +${hors.toFixed(1)} dB. NoiseModelling ne calcule pas ces bandes, l'écart ci-dessus les exclut volontairement.</div>`:''}
+      </div>` + spectrumTableHtml(st);
+  }
+
+  return `<div class="popup-level" style="color:#e2784a;font-size:15px">📍 ${rec.name}</div>
+    <div class="popup-label">Vibreur isolé — mesure terrain</div>
+    ${block}${extra}`;
+}
+
+function receptorIcon(rid){
+  return L.divIcon({
+    html:`<div style="background:#e2784a;color:#fff;border:2px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);width:26px;height:26px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.4)"><span style="transform:rotate(45deg);font-size:10px;font-weight:700">${rid.replace('R','')}</span></div>`,
+    className:'',iconSize:[26,26],iconAnchor:[13,26],popupAnchor:[0,-24]
+  });
+}
+
+function showReceptors(){
+  hideReceptors();
+  let placed=0, missing=0;
+  for(const [rid,rec] of Object.entries(RECEPTORS)){
+    if(rec.lat==null||rec.lon==null){missing++;continue;}  // pas de coords → on saute
+    const mk=L.marker([rec.lat,rec.lon],{icon:receptorIcon(rid)}).addTo(map);
+    mk.bindPopup(()=>receptorPopupHtml(rid,rec),{maxWidth:330,minWidth:290});  // recalculé à chaque ouverture
+    receptorMarkers.push(mk);
+    placed++;
+  }
+  receptorsVisible=true;
+  if(placed===0){
+    setStatus('⚠️ Aucune coordonnée de récepteur renseignée (voir objet RECEPTORS dans le code)','error');
+    document.getElementById('tog-receptors').checked=false;
+  }else{
+    const nMeas=Object.values(RECEPTORS).filter(r=>r.mesure!=null).length;
+    setStatus(`✓ ${placed} point(s) de mesure · ${nMeas} niveau(x) renseigné(s)`,'ok');
+  }
+}
+function hideReceptors(){
+  receptorMarkers.forEach(m=>map.removeLayer(m));
+  receptorMarkers=[];
+  receptorsVisible=false;
+}
+
+document.getElementById('tog-receptors').addEventListener('change',function(){
+  if(this.checked)showReceptors();else hideReceptors();
+});
 
 // ═══════════════════════════════════════
 //  INIT
@@ -1326,13 +1601,16 @@ async function fetchTiles(ext,sat){
   const cv=document.createElement('canvas');cv.width=nx*256;cv.height=ny*256;
   const ctx=cv.getContext('2d');ctx.fillStyle='#141821';ctx.fillRect(0,0,cv.width,cv.height);
   const z=ext.z;
+  // Fond sombre Esri : tuiles natives jusqu'au niveau 16 seulement -> au-delà, tuiles z16 agrandies
+  const zs=sat?z:Math.min(z,16),f=Math.pow(2,z-zs),sz=256*f;
   const urlFor=(x,y)=>sat
-    ?'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+z+'/'+y+'/'+x
-    :'https://a.basemaps.cartocdn.com/dark_all/'+z+'/'+x+'/'+y+'.png';
+    ?'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+zs+'/'+y+'/'+x
+    :'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/'+zs+'/'+y+'/'+x;
+  const sx0=Math.floor(ext.tx0/f),sx1=Math.floor(ext.tx1/f),sy0=Math.floor(ext.ty0/f),sy1=Math.floor(ext.ty1/f);
   const jobs=[];let okc=0;
-  for(let x=ext.tx0;x<=ext.tx1;x++)for(let y=ext.ty0;y<=ext.ty1;y++){
+  for(let x=sx0;x<=sx1;x++)for(let y=sy0;y<=sy1;y++){
     jobs.push(new Promise(res=>{const im=new Image();im.crossOrigin='anonymous';
-      im.onload=function(){try{ctx.drawImage(im,(x-ext.tx0)*256,(y-ext.ty0)*256);okc++;}catch(e){}res();};
+      im.onload=function(){try{ctx.drawImage(im,(x*f-ext.tx0)*256,(y*f-ext.ty0)*256,sz,sz);okc++;}catch(e){}res();};
       im.onerror=function(){res();};im.src=urlFor(x,y);}));}
   await Promise.all(jobs);
   return okc?cv:null;
